@@ -81,7 +81,7 @@ async function getPrice(symbol, currency = 'USD', forceUpdate = false) {
 async function getPriceFromCoinGecko(symbol, currency) {
   const currencyLower = currency.toLowerCase();
   const apiKey = config.cryptoApis.coingecko.apiKey;
-  const headers = apiKey ? { 'x-cg-pro-api-key': apiKey } : {};
+  const headers = apiKey ? { 'x_cg_demo_api_key': apiKey } : {};
   
   // เปลี่ยนจากรูปแบบ BTC เป็น bitcoin ตามที่ CoinGecko ต้องการ
   const coinId = await getCoinGeckoId(symbol);

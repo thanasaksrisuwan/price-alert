@@ -31,7 +31,7 @@ async function handlePriceCommand(ctx) {
     // ดึงข้อมูลผู้ใช้เพื่อเลือกสกุลเงินที่ต้องการแสดง
     const telegramId = ctx.from.id;
     const user = await UserModel.findUserByTelegramId(telegramId);
-    const currency = user?.default_currency || 'USD';
+    const currency = user?.default_currency || 'THB';
     
     // เริ่มแสดงการโหลดข้อมูล
     const loadingMessage = await ctx.reply(`กำลังค้นหาราคา ${symbol}...`);
