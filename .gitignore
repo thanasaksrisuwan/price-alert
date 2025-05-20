@@ -1,0 +1,72 @@
+# Dependency directories
+node_modules/
+npm-debug.log*
+yarn-debug.log
+yarn-error.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Production build
+dist/
+build/
+
+# IDE / Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+.vs/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# PostgreSQL data files (keeping configuration)
+portable-env/pgsql/data/*
+!portable-env/pgsql/data/pg_hba.conf
+!portable-env/pgsql/data/pg_ident.conf
+!portable-env/pgsql/data/postgresql.conf
+!portable-env/pgsql/data/postgresql.auto.conf
+
+# Redis data and logs (keeping configuration)
+portable-env/redis/logs/*
+*.rdb
+
+# Keep portable environment scripts but exclude binary/data files
+!portable-env/*.ps1
+!portable-env/*.cmd
+!portable-env/*.sh
+portable-env/pgsql/bin/*
+portable-env/pgsql/lib/*
+portable-env/pgsql/pgAdmin*/*
+
+# Docker volumes
+docker-volumes/
+
+# Local development backup files
+*.bak
