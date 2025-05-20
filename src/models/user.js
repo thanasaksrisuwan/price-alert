@@ -162,6 +162,38 @@ async function countActiveAlerts(userId) {
   }
 }
 
+/**
+ * อัพเดตสกุลเงินเริ่มต้นของผู้ใช้
+ * @param {number} telegramId - รหัสประจำตัวผู้ใช้จาก Telegram
+ * @param {string} currency - รหัสสกุลเงินใหม่
+ * @returns {Promise<Object>} - ข้อมูลผู้ใช้ที่อัพเดตแล้ว
+ */
+async function updateUserCurrency(telegramId, currency) {
+  try {
+    // ทำความสะอาดข้อมูลนำเข้า
+    const sanitizedCurrency = sanitizeInput(currency);
+    
+    const query = `
+      UPDATE users
+      SET default_currency = $2, updated_at = NOW()
+      WHERE telegram_id = $1
+      RETURNING *
+    `;
+    
+    const result = await db.query(query, [telegramId, sanitizedCurrency]);
+    
+    if (result.rows.length === 0) {
+      throw new Error(`User with Telegram ID ${telegramId} not found`);
+    }
+    
+    logger.info(`Updated currency for user ${telegramId} to ${sanitizedCurrency}`);
+    return result.rows[0];
+  } catch (error) {
+    logger.error(`Error updating currency for user with Telegram ID ${telegramId}:`, error);
+    throw error;
+  }
+}
+
 module.exports = {
   createUser,
   findUserByTelegramId,
@@ -169,4 +201,5 @@ module.exports = {
   updatePremiumStatus,
   getUserById,
   countActiveAlerts,
+  updateUserCurrency
 };

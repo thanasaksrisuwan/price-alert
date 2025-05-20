@@ -139,10 +139,25 @@ function formatCurrency(value, currency, compact = false) {
     return `${currencySymbol}${(value / 1e3).toFixed(2)}K`;
   }
   
-  return `${currencySymbol}${value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: value < 1 ? 8 : 2
-  })}`;
+  // จัดรูปแบบโดยใช้ locale ที่เหมาะสมตามสกุลเงิน
+  const locale = currency === 'THB' ? 'th-TH' : undefined;
+  
+  // กำหนดจำนวนทศนิยม
+  const decimalPlaces = value < 1 ? 8 : 2;
+  
+  // จัดรูปแบบจำนวนเงิน
+  const formattedNumber = value.toLocaleString(locale, {
+    minimumFractionDigits: decimalPlaces,
+    maximumFractionDigits: decimalPlaces
+  });
+  
+  // สำหรับสกุลเงินบาท (THB) แสดงสัญลักษณ์หลังตัวเลขตามมาตรฐานไทย
+  if (currency === 'THB') {
+    return `${formattedNumber} ${currencySymbol}`;
+  }
+  
+  // สำหรับสกุลเงินอื่นๆ แสดงสัญลักษณ์ตามมาตรฐานสากล (หน้าตัวเลข)
+  return `${currencySymbol}${formattedNumber}`;
 }
 
 /**
@@ -174,5 +189,12 @@ function formatDateTime(dateTime) {
 }
 
 module.exports = {
-  handlePriceCommand
+  handlePriceCommand,
+  // Export for testing
+  __testExports: {
+    formatCurrency,
+    getCurrencySymbol,
+    formatPriceMessage,
+    formatDateTime
+  }
 };

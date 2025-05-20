@@ -57,6 +57,12 @@ module.exports = (bot) => {
   // คำสั่ง /premium - อัพเกรดเป็นผู้ใช้พรีเมียม
   bot.command('premium', UserController.handlePremium);
   
+  // คำสั่ง /currency <code> - ตั้งค่าสกุลเงินเริ่มต้น
+  bot.command('currency', UserController.handleSetCurrency);
+  
+  // คำสั่ง /currencies - แสดงรายการสกุลเงินที่รองรับ
+  bot.command('currencies', UserController.handleListCurrencies);
+  
   // =========== คำสั่งตรวจสอบราคา ===========
   
   // คำสั่ง /price <symbol> - ดูราคาปัจจุบัน

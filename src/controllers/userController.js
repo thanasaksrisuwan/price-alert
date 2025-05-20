@@ -6,6 +6,16 @@
 const UserModel = require('../models/user');
 const logger = require('../utils/logger').createModuleLogger('UserController');
 
+// สกุลเงินที่รองรับ
+const SUPPORTED_CURRENCIES = {
+  USD: { name: 'ดอลลาร์สหรัฐ', symbol: '$' },
+  EUR: { name: 'ยูโร', symbol: '€' },
+  GBP: { name: 'ปอนด์สเตอร์ลิง', symbol: '£' },
+  JPY: { name: 'เยนญี่ปุ่น', symbol: '¥' },
+  THB: { name: 'บาทไทย', symbol: '฿' },
+  BTC: { name: 'บิตคอยน์', symbol: '₿' }
+};
+
 /**
  * จัดการคำสั่ง /start - เริ่มต้นการใช้งาน bot
  * @param {object} ctx - Telegraf context
@@ -182,9 +192,73 @@ async function handlePremium(ctx) {
   }
 }
 
+/**
+ * จัดการคำสั่ง /currency - ตั้งค่าสกุลเงินเริ่มต้น
+ * @param {object} ctx - Telegraf context
+ */
+async function handleSetCurrency(ctx) {
+  try {
+    const { id: telegramId } = ctx.from;
+    const user = await UserModel.findUserByTelegramId(telegramId);
+    
+    if (!user) {
+      return ctx.reply('โปรดเริ่มต้นใช้งานบอทด้วยคำสั่ง /start');
+    }
+
+    // แยกคำสั่งและรหัสสกุลเงิน
+    const parts = ctx.message.text.split(' ');
+    if (parts.length !== 2) {
+      return ctx.reply('รูปแบบคำสั่งไม่ถูกต้อง โปรดใช้รูปแบบ /currency <code> เช่น /currency THB');
+    }
+
+    const currencyCode = parts[1].toUpperCase();
+    
+    // ตรวจสอบว่าเป็นสกุลเงินที่รองรับหรือไม่
+    if (!SUPPORTED_CURRENCIES[currencyCode]) {
+      return ctx.reply(`รหัสสกุลเงินไม่ถูกต้อง โปรดใช้รหัสที่รองรับ เช่น USD, EUR, THB\nดูรายการสกุลเงินที่รองรับได้ด้วยคำสั่ง /currencies`);
+    }
+    
+    // บันทึกการตั้งค่าสกุลเงินใหม่
+    await UserModel.updateUserCurrency(telegramId, currencyCode);
+    
+    const { name, symbol } = SUPPORTED_CURRENCIES[currencyCode];
+    const successMessage = `✅ ตั้งค่าสกุลเงินเป็น ${currencyCode} (${name} ${symbol}) สำเร็จแล้ว`;
+    
+    ctx.reply(successMessage);
+    
+    logger.info(`User ${telegramId} set currency to ${currencyCode}`);
+  } catch (error) {
+    logger.error('Error in handleSetCurrency:', error);
+    ctx.reply('เกิดข้อผิดพลาด โปรดลองอีกครั้งในภายหลัง');
+  }
+}
+
+/**
+ * จัดการคำสั่ง /currencies - แสดงรายการสกุลเงินที่รองรับ
+ * @param {object} ctx - Telegraf context
+ */
+async function handleListCurrencies(ctx) {
+  try {
+    let message = '*สกุลเงินที่รองรับ* 💲\n\n';
+    
+    for (const [code, { name, symbol }] of Object.entries(SUPPORTED_CURRENCIES)) {
+      message += `• ${code} - ${name} (${symbol})\n`;
+    }
+    
+    message += '\nสามารถตั้งค่าสกุลเงินเริ่มต้นด้วยคำสั่ง /currency <code>';
+    
+    await ctx.replyWithMarkdown(message);
+  } catch (error) {
+    logger.error('Error in handleListCurrencies:', error);
+    ctx.reply('เกิดข้อผิดพลาด โปรดลองอีกครั้งในภายหลัง');
+  }
+}
+
 module.exports = {
   handleStart,
   handleHelp,
   handleSettings,
-  handlePremium
+  handlePremium,
+  handleSetCurrency,
+  handleListCurrencies
 };

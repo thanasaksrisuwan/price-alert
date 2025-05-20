@@ -217,9 +217,9 @@ function formatPortfolioMessage(portfolioData, currency, totalValue, totalInvest
   let message = `💼 *พอร์ตโฟลิโอของคุณ* 💼\n\n`;
   
   // ส่วนสรุปรวม
-  message += `*มูลค่ารวม:* ${currencySymbol}${totalValue.toFixed(2)}\n`;
-  message += `*เงินลงทุน:* ${currencySymbol}${totalInvestment.toFixed(2)}\n`;
-  message += `*กำไร/ขาดทุน:* ${profitIndicator} ${totalProfitLoss >= 0 ? '+' : ''}${currencySymbol}${totalProfitLoss.toFixed(2)} (${totalProfitLossPercentage.toFixed(2)}%)\n\n`;
+  message += `*มูลค่ารวม:* ${formatMoneyValue(totalValue, currency, currencySymbol)}\n`;
+  message += `*เงินลงทุน:* ${formatMoneyValue(totalInvestment, currency, currencySymbol)}\n`;
+  message += `*กำไร/ขาดทุน:* ${profitIndicator} ${totalProfitLoss >= 0 ? '+' : ''}${formatMoneyValue(totalProfitLoss, currency, currencySymbol)} (${totalProfitLossPercentage.toFixed(2)}%)\n\n`;
   
   message += `*รายละเอียดเหรียญ:*\n`;
   
@@ -231,13 +231,13 @@ function formatPortfolioMessage(portfolioData, currency, totalValue, totalInvest
     message += `จำนวน: ${item.quantity}\n`;
     
     if (item.priceAvailable) {
-      message += `ราคาปัจจุบัน: ${currencySymbol}${item.currentPrice.toFixed(2)}\n`;
-      message += `มูลค่า: ${currencySymbol}${item.currentValue.toFixed(2)}\n`;
-      message += `ราคาซื้อ: ${currencySymbol}${item.buy_price.toFixed(2)}\n`;
-      message += `กำไร/ขาดทุน: ${item.profitLoss >= 0 ? '+' : ''}${currencySymbol}${item.profitLoss.toFixed(2)} (${item.profitLossPercentage.toFixed(2)}%)\n`;
+      message += `ราคาปัจจุบัน: ${formatMoneyValue(item.currentPrice, currency, currencySymbol)}\n`;
+      message += `มูลค่า: ${formatMoneyValue(item.currentValue, currency, currencySymbol)}\n`;
+      message += `ราคาซื้อ: ${formatMoneyValue(item.buy_price, currency, currencySymbol)}\n`;
+      message += `กำไร/ขาดทุน: ${item.profitLoss >= 0 ? '+' : ''}${formatMoneyValue(item.profitLoss, currency, currencySymbol)} (${item.profitLossPercentage.toFixed(2)}%)\n`;
     } else {
       message += `ราคาปัจจุบัน: ไม่สามารถดึงข้อมูลได้\n`;
-      message += `ราคาซื้อ: ${currencySymbol}${item.buy_price.toFixed(2)}\n`;
+      message += `ราคาซื้อ: ${formatMoneyValue(item.buy_price, currency, currencySymbol)}\n`;
     }
   });
   
@@ -245,6 +245,28 @@ function formatPortfolioMessage(portfolioData, currency, totalValue, totalInvest
   message += `\n\nเพิ่มเหรียญ: /add <symbol> <quantity> <buy_price>`;
   
   return message;
+}
+
+/**
+ * จัดรูปแบบค่าเงินตามรูปแบบที่เหมาะสมกับแต่ละสกุลเงิน
+ * @param {number} value - จำนวนเงิน
+ * @param {string} currency - รหัสสกุลเงิน
+ * @param {string} currencySymbol - สัญลักษณ์สกุลเงิน
+ * @returns {string} - ค่าเงินที่จัดรูปแบบแล้ว
+ */
+function formatMoneyValue(value, currency, currencySymbol) {
+  const formattedValue = value.toLocaleString(currency === 'THB' ? 'th-TH' : undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  
+  // สำหรับสกุลเงินบาท แสดงสัญลักษณ์หลังตัวเลข
+  if (currency === 'THB') {
+    return `${formattedValue} ${currencySymbol}`;
+  }
+  
+  // สำหรับสกุลเงินอื่นๆ แสดงสัญลักษณ์หน้าตัวเลข
+  return `${currencySymbol}${formattedValue}`;
 }
 
 /**
@@ -267,5 +289,11 @@ function getCurrencySymbol(currency) {
 
 module.exports = {
   handleShowPortfolio,
-  handleAddToPortfolio
+  handleAddToPortfolio,
+  // Export for testing
+  __testExports: {
+    formatPortfolioMessage,
+    getCurrencySymbol,
+    formatMoneyValue
+  }
 };
