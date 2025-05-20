@@ -46,24 +46,24 @@ build/
 ehthumbs.db
 Thumbs.db
 
-# PostgreSQL data files (keeping configuration)
-portable-env/pgsql/data/*
+# PostgreSQL - Exclude all binary and data files
+portable-env/pgsql/**
 !portable-env/pgsql/data/pg_hba.conf
 !portable-env/pgsql/data/pg_ident.conf
 !portable-env/pgsql/data/postgresql.conf
 !portable-env/pgsql/data/postgresql.auto.conf
 
-# Redis data and logs (keeping configuration)
-portable-env/redis/logs/*
+# Redis - Exclude all binary files
+portable-env/redis/**
+!portable-env/redis/redis.portable.conf
+!portable-env/redis/redis.windows.conf
+!portable-env/redis/redis.windows-service.conf
 *.rdb
 
 # Keep portable environment scripts but exclude binary/data files
 !portable-env/*.ps1
 !portable-env/*.cmd
 !portable-env/*.sh
-portable-env/pgsql/bin/*
-portable-env/pgsql/lib/*
-portable-env/pgsql/pgAdmin*/*
 
 # Docker volumes
 docker-volumes/
