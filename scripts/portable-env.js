@@ -9,10 +9,14 @@
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
-const { exec } = require('child_process');
+const { exec, spawn, spawnSync } = require('child_process');
 const { createWriteStream, existsSync, mkdirSync } = require('fs');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
+const os = require('os');
+
+// Check if running on Windows
+const isWindows = os.platform() === 'win32';
 
 const rootDir = path.resolve(__dirname, '..');
 const portableDirName = 'portable-env';
@@ -85,8 +89,7 @@ async function installPortableEnvIfNeeded() {
       if (!fs.existsSync(scriptPath)) {
         throw new Error(`ไม่พบสคริปท์ portable-env.sh ในไดเรกทอรี ${rootDir}`);
       }
-        // ให้สิทธิ์การรันสคริปท์
-      require('child_process').spawnSync('chmod', ['+x', scriptPath]);
+        // ให้สิทธิ์การรันสคริปท์      spawnSync('chmod', ['+x', scriptPath]);
       
       await runCommand(scriptPath, []);
     }
@@ -117,10 +120,9 @@ async function startServices() {
     await runCommand('powershell', [
       '-ExecutionPolicy', 'Bypass',
       '-File', startScript
-    ]);
-  } else {    // ให้สิทธิ์การรันสคริปท์หากจำเป็น
+    ]);  } else {    // ให้สิทธิ์การรันสคริปท์หากจำเป็น
     if (!fs.statSync(startScript).mode & 0o111) {
-      require('child_process').spawnSync('chmod', ['+x', startScript]);
+      spawnSync('chmod', ['+x', startScript]);
     }
     
     await runCommand(startScript, []);
@@ -148,7 +150,7 @@ async function stopServices() {
     ]);
   } else {    // ให้สิทธิ์การรันสคริปท์หากจำเป็น
     if (!fs.statSync(stopScript).mode & 0o111) {
-      require('child_process').spawnSync('chmod', ['+x', stopScript]);
+      spawnSync('chmod', ['+x', stopScript]);
     }
     
     await runCommand(stopScript, []);
@@ -169,11 +171,10 @@ async function checkStatus() {
     // ตรวจสอบสถานะ Redis (พอร์ต 6380)
   let redisRunning = false;
   try {
-    let netstat;
-    if (isWindows) {
-      netstat = require('child_process').spawnSync('netstat', ['-an']);
+    let netstat;    if (isWindows) {
+      netstat = spawnSync('netstat', ['-an']);
     } else {
-      netstat = require('child_process').spawnSync('lsof', ['-i', ':6380']);
+      netstat = spawnSync('lsof', ['-i', ':6380']);
     }
     
     const output = netstat.stdout ? netstat.stdout.toString() : '';
@@ -185,11 +186,10 @@ async function checkStatus() {
   // ตรวจสอบสถานะ PostgreSQL (พอร์ต 5433)
   let pgRunning = false;
   try {
-    let netstat;
-    if (isWindows) {
-      netstat = require('child_process').spawnSync('netstat', ['-an']);
+    let netstat;    if (isWindows) {
+      netstat = spawnSync('netstat', ['-an']);
     } else {
-      netstat = require('child_process').spawnSync('lsof', ['-i', ':5433']);
+      netstat = spawnSync('lsof', ['-i', ':5433']);
     }
     
     const output = netstat.stdout ? netstat.stdout.toString() : '';

@@ -25,27 +25,30 @@ SET "PG_PASSWORD=postgres"
 SET "PORTABLE_REDIS_PORT=6380"
 SET "PORTABLE_PG_PORT=5433"
 
+REM Include color utility functions
+IF EXIST "%ROOT_DIR%price-alert-utils.cmd" (
+  CALL "%ROOT_DIR%price-alert-utils.cmd"
+)
+
 REM ============================================================
 REM Main Menu Function
 REM ============================================================
 :MAIN_MENU
 CLS
 ECHO.
-ECHO [96m============================================================[0m
-ECHO [96m               PRICE ALERT MANAGEMENT TOOL                  [0m
-ECHO [96m============================================================[0m
+CALL :HEADER "PRICE ALERT MANAGEMENT TOOL"
 ECHO.
-ECHO  [93m1.[0m Setup Environment
-ECHO  [93m2.[0m Start Services
-ECHO  [93m3.[0m Stop Services
-ECHO  [93m4.[0m Start Application (Production Mode)
-ECHO  [93m5.[0m Start Application (Development Mode)
-ECHO  [93m6.[0m Run Tests
-ECHO  [93m7.[0m View Services Status
-ECHO  [93m8.[0m Clean Up Repository
-ECHO  [93m9.[0m Exit
+ECHO  [93m1.[93m Setup Environment
+ECHO  [93m2.[93m Start Services
+ECHO  [93m3.[93m Stop Services
+ECHO  [93m4.[93m Start Application (Production Mode)
+ECHO  [93m5.[93m Start Application (Development Mode)
+ECHO  [93m6.[93m Run Tests
+ECHO  [93m7.[93m View Services Status
+ECHO  [93m8.[93m Clean Up Repository
+ECHO  [93m9.[93m Exit
 ECHO.
-ECHO [96m============================================================[0m
+CALL :DIVIDER
 ECHO.
 
 SET /P MENU_CHOICE="Please enter your choice (1-9): "
@@ -66,13 +69,11 @@ REM Setup Environment
 REM ============================================================
 :SETUP_ENV
 CLS
-ECHO [96m============================================================[0m
-ECHO [96m                   SETUP ENVIRONMENT                        [0m
-ECHO [96m============================================================[0m
+CALL :HEADER "SETUP ENVIRONMENT"
 ECHO.
-ECHO [93m1.[0m Download and setup portable environment
-ECHO [93m2.[0m Check/install Node.js dependencies 
-ECHO [93m3.[0m Return to main menu
+ECHO [93m1.[93m Download and setup portable environment
+ECHO [93m2.[93m Check/install Node.js dependencies 
+ECHO [93m3.[93m Return to main menu
 ECHO.
 SET /P SETUP_CHOICE="Please enter your choice (1-3): "
 
@@ -83,7 +84,7 @@ GOTO SETUP_ENV
 
 :DOWNLOAD_PORTABLE
 ECHO.
-ECHO [96mSetting up portable environment...[0m
+CALL :INFO "Setting up portable environment..."
 ECHO.
 
 REM Create required directories
@@ -91,19 +92,19 @@ IF NOT EXIST "%PORTABLE_DIR%" mkdir "%PORTABLE_DIR%"
 IF NOT EXIST "%PID_DIR%" mkdir "%PID_DIR%"
 IF NOT EXIST "%LOG_DIR%" mkdir "%LOG_DIR%"
 
-ECHO [93mDownloading portable binaries...[0m
+CALL :WARNING "Downloading portable binaries..."
 ECHO.
 
 REM Run the Node.js script for downloading binaries
 node "%ROOT_DIR%scripts\portable-env.js"
 IF %ERRORLEVEL% NEQ 0 (
-    ECHO [91mFailed to download portable binaries. Please check your internet connection.[0m
+    CALL :ERROR "Failed to download portable binaries. Please check your internet connection."
     PAUSE
     GOTO SETUP_ENV
 )
 
 ECHO.
-ECHO [92mPortable environment setup complete![0m
+CALL :SUCCESS "Portable environment setup complete!"
 PAUSE
 GOTO SETUP_ENV
 
@@ -477,6 +478,6 @@ REM Exit
 REM ============================================================
 :EXIT
 ECHO.
-ECHO [96mThank you for using Price Alert Management Tool![0m
+CALL :INFO "Thank you for using Price Alert Management Tool!"
 ECHO.
 EXIT /B 0
