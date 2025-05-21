@@ -1,14 +1,19 @@
 /**
- * สคริปท์จัดการสภาพแวดล้อมพกพา (Portable Environment)
- * สำหรับการจัดการเริ่มต้นและหยุด Redis และ PostgreSQL ในรูปแบบพกพา
+ * Portable Environment Setup
+ * 
+ * This script handles downloading and extracting the portable
+ * Redis and PostgreSQL binaries for the Price Alert application.
+ * It replaces the PowerShell-based setup with a Node.js solution.
  */
 
 const path = require('path');
 const fs = require('fs');
-const { spawn, spawnSync } = require('cross-spawn');
-const os = require('os');
+const https = require('https');
+const { exec } = require('child_process');
+const { createWriteStream, existsSync, mkdirSync } = require('fs');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 
-const isWindows = os.platform() === 'win32';
 const rootDir = path.resolve(__dirname, '..');
 const portableDirName = 'portable-env';
 const portableDir = path.join(rootDir, portableDirName);

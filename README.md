@@ -1,63 +1,74 @@
 # Crypto Price Alert Telegram Bot
 
-แอปพลิเคชันบอทแจ้งเตือนราคาคริปโตผ่าน Telegram พร้อมการติดตามพอร์ตโฟลิโอและข่าวสาร
+A Telegram bot application for crypto price alerts with portfolio tracking and news updates
 
-## คุณสมบัติ
+## Features
 
-- 📊 ดูราคาปัจจุบันของเหรียญคริปโต
-- 🚨 ตั้งการแจ้งเตือนเมื่อราคาถึงระดับที่กำหนด
-- 📈 ติดตามพอร์ตโฟลิโอการลงทุน
-- 📰 ข่าวและข้อมูลการวิเคราะห์
-- 👥 รองรับผู้ใช้ฟรีและผู้ใช้พรีเมียม
+- 📊 View current cryptocurrency prices
+- 🚨 Set price alerts for specific levels
+- 📈 Track your investment portfolio
+- 📰 Access news and analysis data
+- 👥 Support for free and premium users
 
-## คำสั่งบอทที่รองรับ
+## Bot Commands
 
-- `/start` - เริ่มใช้งานบอท
-- `/help` - แสดงความช่วยเหลือ
-- `/price <symbol>` - ดูราคาปัจจุบัน
-- `/alert <symbol> <condition> <value>` - ตั้งการแจ้งเตือน
-- `/alerts` - ดูการแจ้งเตือนที่ตั้งไว้
-- `/remove <alert_id>` - ลบการแจ้งเตือน
-- `/portfolio` - ดูพอร์ตโฟลิโอ
-- `/add <symbol> <quantity> <buy_price>` - เพิ่มเหรียญในพอร์ตโฟลิโอ
-- `/news <symbol>` - ดูข่าวเกี่ยวกับเหรียญ
-- `/settings` - ตั้งค่าผู้ใช้
-- `/premium` - อัปเกรดเป็นพรีเมียม
+- `/start` - Start using the bot
+- `/help` - Show help information
+- `/price <symbol>` - View current price
+- `/alert <symbol> <condition> <value>` - Set a price alert
+- `/alerts` - View your active alerts
+- `/remove <alert_id>` - Remove an alert
+- `/portfolio` - View your portfolio
+- `/add <symbol> <quantity> <buy_price>` - Add coin to portfolio
+- `/news <symbol>` - Get news about a coin
+- `/settings` - User settings
+- `/premium` - Upgrade to premium
 
-## เครื่องมือบรรทัดคำสั่งกลาง (CLI)
+## Windows Command Line Interface
 
-โปรเจกต์นี้มี CLI สำหรับการจัดการทุกอย่างในที่เดียว:
+This project includes a streamlined CLI for Windows to manage everything in one place:
 
-```
-npm run cli <command>
-```
+### Quick Start Menu
 
-หรือใช้โดยตรง (หลังจากติดตั้งแบบ global หรือในเครื่องแบบ local):
+For a user-friendly graphical menu interface, simply run:
 
-```
-node cli.js <command>
+```batch
+quick-start.cmd
 ```
 
-### คำสั่ง CLI ที่รองรับ
+### Using the CLI directly
 
-#### การติดตั้ง
-- `setup` - ตัวช่วยติดตั้งแบบโต้ตอบ
-- `setup:local` - ติดตั้งสภาพแวดล้อมแบบในระบบ
-- `setup:portable` - ติดตั้งสภาพแวดล้อมแบบพกพา
+You can also use the command-line interface directly:
 
-#### การรันแอปพลิเคชัน
-- `start` - เริ่มแอปพลิเคชัน (โหมดผลิต)
-- `dev` - เริ่มแอปพลิเคชันในโหมดพัฒนา (พร้อม nodemon)
+```batch
+price-alert.bat <command>
+```
 
-#### การจัดการบริการ
-- `services` - แสดงสถานะบริการ
-- `services:start` - เริ่มบริการทั้งหมด
-- `services:stop` - หยุดบริการทั้งหมด
+### Available CLI Commands
 
-#### สภาพแวดล้อมแบบพกพา
-- `portable:start` - เริ่มบริการแบบพกพา
-- `portable:stop` - หยุดบริการแบบพกพา
-- `portable:verify` - ตรวจสอบการติดตั้งแบบพกพา
+#### Setup
+
+- `setup` - Install portable environment with Redis and PostgreSQL
+
+#### Service Management
+
+- `services` - Show status of all services
+- `services:start` - Start all required services
+- `services:stop` - Stop all services
+
+#### Running the Application
+
+- `start` - Start the application in production mode
+- `dev` - Start the application in development mode with auto-reload
+
+#### Testing
+
+- `test` - Run all tests
+
+#### Information
+
+- `info` - Show project information
+- `help` - Show detailed usage information
 
 #### เครื่องมืออื่นๆ
 - `test` - รันการทดสอบทั้งหมด

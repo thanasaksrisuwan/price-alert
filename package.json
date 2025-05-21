@@ -6,24 +6,13 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "start:all": "node scripts/start-all.js",
-    "start:services": "node scripts/start-all-services.js",
     "test": "jest",
-    "setup:local": "node scripts/setup-local.js",
-    "verify": "node scripts/verify-installation.js",
-    "portable": "node scripts/portable-env.js",
-    "portable:install": "node scripts/portable-env.js install",
-    "portable:start": "node scripts/portable-env.js start",
-    "portable:stop": "node scripts/portable-env.js stop",
-    "portable:status": "node scripts/portable-env.js status",
-    "portable:verify": "node scripts/verify-portable.js",
+    "setup": "node cli.js setup",
+    "services": "node cli.js services",
+    "services:start": "node cli.js services:start",
+    "services:stop": "node cli.js services:stop",
     "cli": "node cli.js",
-    "repo:analyze": "powershell -File ./analyze-repo-size.ps1",
-    "repo:analyze:linux": "bash ./analyze-repo-size.sh",
-    "repo:clean": "powershell -File ./cleanup-git-history.ps1",
-    "repo:clean:linux": "bash ./cleanup-git-history.sh",
-    "download:binaries": "powershell -File ./download-portable-binaries.ps1",
-    "download:binaries:linux": "bash ./download-portable-binaries.sh"
+    "quickstart": "cmd /c quick-start.cmd"
   },
   "bin": {
     "price-alert": "./cli.js"

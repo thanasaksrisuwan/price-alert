@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * PriceAlert CLI - เครื่องมือบรรทัดคำสั่งกลางสำหรับจัดการโครงการ
+ * PriceAlert CLI - Command-line tool for managing the Price Alert project
  * 
- * เครื่องมือนี้รวมการจัดการ การติดตั้ง การทดสอบ การรัน และคำสั่งอื่นๆ
- * ของโปรเจกต์ Price Alert ไว้ในที่เดียว
+ * This tool centralizes installation, testing, running and other commands
+ * for the Price Alert project
  */
 
 const { program } = require('commander');
@@ -17,7 +17,7 @@ const os = require('os');
 const inquirer = require('inquirer');
 const ora = require('ora');
 
-// สี
+// Colors for console output
 const colors = {
   info: chalk.blue,
   success: chalk.green,
@@ -27,13 +27,12 @@ const colors = {
   highlight: chalk.magenta
 };
 
-const isWindows = os.platform() === 'win32';
+// We only support Windows
 const rootDir = path.resolve(__dirname);
 const portableDir = path.join(rootDir, 'portable-env');
-const localEnvDir = path.join(rootDir, 'local-env');
 
 /**
- * แสดงหน้าแรกของ CLI
+ * Displays the CLI banner
  */
 function displayBanner() {
   console.log(
@@ -45,21 +44,21 @@ function displayBanner() {
       })
     )
   );
-  console.log(colors.info('ระบบจัดการบอทแจ้งเตือนราคาคริปโตเคอเรนซี - เครื่องมือบรรทัดคำสั่งกลาง'));
-  console.log(colors.info('เวอร์ชัน 1.0.0'));
+  console.log(colors.info('Crypto Price Alert Bot Management System - CLI Tool'));
+  console.log(colors.info('Version 1.0.0'));
   console.log(colors.info('======================================================\n'));
 }
 
 /**
- * รันคำสั่งในเทอร์มินัล
- * @param {string} command - คำสั่งที่จะรัน
- * @param {Array<string>} args - อาร์กิวเมนต์สำหรับคำสั่ง
- * @param {Object} options - ตัวเลือกสำหรับการรันคำสั่ง
- * @returns {Promise<{stdout: string, stderr: string}>} - Promise พร้อมผลลัพธ์
+ * Runs a command in the terminal
+ * @param {string} command - The command to run
+ * @param {Array<string>} args - The arguments for the command
+ * @param {Object} options - The options for running the command
+ * @returns {Promise<{stdout: string, stderr: string}>} - Promise with results
  */
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    console.log(colors.info(`กำลังรัน: ${command} ${args.join(' ')}`));
+    console.log(colors.info(`Running: ${command} ${args.join(' ')}`));
     
     const proc = spawn(command, args, {
       stdio: options.silent ? 'pipe' : 'inherit',
@@ -83,88 +82,75 @@ function runCommand(command, args, options = {}) {
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
-        reject(new Error(`คำสั่ง ${command} ล้มเหลวด้วยรหัส ${code}`));
+        reject(new Error(`Command ${command} failed with code ${code}`));
       }
     });
     
     proc.on('error', err => {
-      reject(new Error(`เกิดข้อผิดพลาดในการรันคำสั่ง: ${err.message}`));
+      reject(new Error(`Error running command: ${err.message}`));
     });
   });
 }
 
 /**
- * ตรวจสอบว่าเป็นผู้ใช้ที่มีสิทธิ์เป็น Administrator หรือ root หรือไม่
- * @returns {boolean} - true ถ้าเป็น admin, false ถ้าไม่ใช่
+ * Checks if user has admin rights
+ * @returns {boolean} - true if admin, false otherwise
  */
 function checkIsAdmin() {
   try {
-    if (isWindows) {
-      // ตรวจสอบว่าใช้สิทธิ์ Admin หรือไม่บน Windows
-      const { status } = spawnSync('net', ['session'], { stdio: ['ignore', 'ignore', 'ignore'] });
-      return status === 0;
-    } else {
-      // ตรวจสอบว่าใช้สิทธิ์ root หรือไม่บน Unix
-      return process.getuid && process.getuid() === 0;
-    }
+    // Check if user has Admin rights on Windows
+    const { status } = spawnSync('net', ['session'], { stdio: ['ignore', 'ignore', 'ignore'] });
+    return status === 0;
   } catch (err) {
     return false;
   }
 }
 
 /**
- * จัดการการติดตั้ง Node modules
+ * Installs Node.js dependencies
  */
 async function installDependencies() {
-  const spinner = ora('กำลังติดตั้งแพ็กเกจที่จำเป็น...').start();
+  const spinner = ora('Installing required packages...').start();
   try {
     await runCommand('npm', ['install'], { silent: true });
-    spinner.succeed('ติดตั้งแพ็กเกจเสร็จสมบูรณ์');
+    spinner.succeed('Package installation completed');
   } catch (error) {
-    spinner.fail(`ติดตั้งแพ็กเกจล้มเหลว: ${error.message}`);
+    spinner.fail(`Package installation failed: ${error.message}`);
   }
 }
 
 /**
- * ตรวจสอบสถานะของบริการ Redis และ PostgreSQL
+ * Checks the status of Redis and PostgreSQL services
  */
 async function checkServicesStatus() {
-  console.log(colors.heading('\nสถานะบริการ:'));
+  console.log(colors.heading('\nServices Status:'));
 
-  // ตรวจสอบว่าติดตั้งสภาพแวดล้อมแบบใดแล้วบ้าง
+  // Check if portable environment is installed
   const hasPortableEnv = fs.existsSync(portableDir);
-  const hasLocalEnv = fs.existsSync(localEnvDir);
 
   if (hasPortableEnv) {
-    console.log(colors.info('สภาพแวดล้อมแบบพกพา:'));
+    console.log(colors.info('Portable Environment:'));
     await runNodeScript('scripts/portable-env.js', ['status']);
-  }
-
-  if (hasLocalEnv) {
-    console.log(colors.info('\nสภาพแวดล้อมแบบติดตั้งในเครื่อง:'));
-    await runNodeScript('scripts/verify-installation.js');
-  }
-  
-  if (!hasPortableEnv && !hasLocalEnv) {
-    console.log(colors.warning('ยังไม่ได้ติดตั้งสภาพแวดล้อมใดๆ กรุณาใช้คำสั่ง setup'));
+  } else {
+    console.log(colors.warning('No environments installed. Please use the setup command'));
   }
 }
 
 /**
- * รันสคริปต์ Node.js
- * @param {string} scriptPath - พาธของสคริปต์
- * @param {Array<string>} args - อาร์กิวเมนต์
+ * Runs a Node.js script
+ * @param {string} scriptPath - Path to the script
+ * @param {Array<string>} args - Arguments
  */
 async function runNodeScript(scriptPath, args = []) {
   try {
     await runCommand('node', [scriptPath, ...args]);
   } catch (error) {
-    console.error(colors.error(`เกิดข้อผิดพลาดในการรันสคริปต์ ${scriptPath}: ${error.message}`));
+    console.error(colors.error(`Error running script ${scriptPath}: ${error.message}`));
   }
 }
 
 /**
- * สร้าง .env file หากยังไม่มี
+ * Creates .env file if it doesn't exist
  */
 async function createEnvFile() {
   const envPath = path.join(rootDir, '.env');
@@ -173,95 +159,79 @@ async function createEnvFile() {
       {
         type: 'input',
         name: 'telegramToken',
-        message: 'Telegram Bot Token (ได้จาก @BotFather):',
+        message: 'Telegram Bot Token (from @BotFather):',
         default: 'your_telegram_bot_token'
       },
       {
         type: 'input',
         name: 'port',
-        message: 'พอร์ตที่ต้องการให้แอพทำงาน:',
+        message: 'Port for the application:',
         default: '3000',
         validate: (input) => {
           const port = parseInt(input);
           if (isNaN(port) || port < 1 || port > 65535) {
-            return 'กรุณาระบุพอร์ตระหว่าง 1-65535';
+            return 'Please enter a port between 1-65535';
           }
           return true;
         }
       }
     ]);
 
-    const envContent = `# การกำหนดค่าแอปพลิเคชัน
+    const envContent = `# Application Configuration
 NODE_ENV=development
 PORT=${answers.port}
 LOG_LEVEL=debug
 
-# การกำหนดค่าฐานข้อมูล (แบบติดตั้งในเครื่อง)
-DATABASE_URL=postgres://postgres:password@localhost:5432/price_alert_db
+# Portable Database Configuration
+DATABASE_URL=postgres://postgres:password@localhost:5433/price_alert_db
 
-# การกำหนดค่า Redis (แบบติดตั้งในเครื่อง)
-REDIS_URL=redis://localhost:6379
+# Portable Redis Configuration
+REDIS_URL=redis://localhost:6380
 
-# การกำหนดค่าฐานข้อมูล (แบบพกพา)
-# DATABASE_URL=postgres://postgres:password@localhost:5433/price_alert_db
-
-# การกำหนดค่า Redis (แบบพกพา)
-# REDIS_URL=redis://localhost:6380
-
-# ตั้งค่า Telegram Bot Token
+# Telegram Bot Token
 TELEGRAM_BOT_TOKEN=${answers.telegramToken}
 `;
 
     fs.writeFileSync(envPath, envContent, 'utf8');
-    console.log(colors.success('\nสร้างไฟล์ .env เสร็จเรียบร้อย'));
+    console.log(colors.success('\n.env file created successfully'));
   } else {
-    console.log(colors.info('\nไฟล์ .env มีอยู่แล้ว'));
+    console.log(colors.info('\n.env file already exists'));
   }
 }
 
 /**
- * แสดงหน้าจอช่วยเหลือแบบละเอียด
+ * Shows detailed help screen
  */
 function showDetailedHelp() {
   console.clear();
   displayBanner();
   
-  console.log(colors.heading('วิธีใช้งาน PriceAlert CLI:'));
+  console.log(colors.heading('PriceAlert CLI Usage:'));
   console.log(`
-${colors.highlight('การติดตั้ง:')}
-  ${colors.success('setup')}             - ช่วยคุณตัดสินใจเลือกวิธีติดตั้งที่เหมาะสม
-  ${colors.success('setup:local')}       - ติดตั้งสภาพแวดล้อม Redis และ PostgreSQL ลงในเครื่อง
-  ${colors.success('setup:portable')}    - ติดตั้งสภาพแวดล้อมแบบพกพา (ไม่ต้องการสิทธิ์ admin)
+${colors.highlight('Setup:')}
+  ${colors.success('setup')}             - Install portable environment
 
-${colors.highlight('การรันแอปพลิเคชัน:')}
-  ${colors.success('start')}             - เริ่มแอปพลิเคชัน (โหมดผลิต)
-  ${colors.success('dev')}               - เริ่มแอปพลิเคชันในโหมดพัฒนา (พร้อม nodemon)
+${colors.highlight('Running the Application:')}
+  ${colors.success('start')}             - Start the application (production mode)
+  ${colors.success('dev')}               - Start the application in development mode (with nodemon)
 
-${colors.highlight('การจัดการบริการ:')}
-  ${colors.success('services')}          - แสดงสถานะบริการทั้งหมด
-  ${colors.success('services:start')}    - เริ่มบริการตามที่ติดตั้งไว้ (อัตโนมัติ)
-  ${colors.success('services:stop')}     - หยุดบริการทั้งหมด
+${colors.highlight('Service Management:')}
+  ${colors.success('services')}          - Show status of all services
+  ${colors.success('services:start')}    - Start all services
+  ${colors.success('services:stop')}     - Stop all services
 
-${colors.highlight('แบบพกพา:')}
-  ${colors.success('portable:start')}    - เริ่มบริการแบบพกพา
-  ${colors.success('portable:stop')}     - หยุดบริการแบบพกพา
-  ${colors.success('portable:verify')}   - ตรวจสอบการติดตั้งแบบพกพา
+${colors.highlight('Testing:')}
+  ${colors.success('test')}              - Run all tests
 
-${colors.highlight('เครื่องมืออื่นๆ:')}
-  ${colors.success('test')}              - รันการทดสอบทั้งหมด
-  ${colors.success('logs')}              - แสดงไฟล์บันทึกเหตุการณ์
-  ${colors.success('clean')}             - ล้างไฟล์ที่ไม่จำเป็นและไฟล์ชั่วคราว
-  ${colors.success('db:reset')}          - รีเซ็ตฐานข้อมูลและนำเข้าสคีมา
-  ${colors.success('info')}              - แสดงข้อมูลเกี่ยวกับโครงการ
-
-${colors.highlight('เพิ่มเติม:')}
-  ${colors.success('--help')}            - แสดงวิธีใช้งานโดยละเอียด
+${colors.highlight('Additional:')}
+  ${colors.success('info')}              - Show project information
+  ${colors.success('--help')}            - Show detailed usage information
   
   `);
 }
 
 /**
- * แสดงข้อมูลของโครงการ
+ * Shows project information
  */
 async function showProjectInfo() {
   const packageJsonPath = path.join(rootDir, 'package.json');
@@ -271,34 +241,124 @@ async function showProjectInfo() {
     const packageContent = fs.readFileSync(packageJsonPath, 'utf8');
     packageInfo = JSON.parse(packageContent);
   } catch (error) {
-    console.error(colors.error(`ไม่สามารถอ่านไฟล์ package.json: ${error.message}`));
+    console.error(colors.error(`Cannot read package.json: ${error.message}`));
   }
   
-  console.log(colors.heading('\nข้อมูลโครงการ:'));
-  console.log(colors.info(`ชื่อโครงการ: ${packageInfo.name || 'price-alert'}`));
-  console.log(colors.info(`เวอร์ชัน: ${packageInfo.version || '1.0.0'}`));
-  console.log(colors.info(`คำอธิบาย: ${packageInfo.description || 'Crypto Price Alert Telegram Bot'}`));
+  console.log(colors.heading('\nProject Information:'));
+  console.log(colors.info(`Project Name: ${packageInfo.name || 'price-alert'}`));
+  console.log(colors.info(`Version: ${packageInfo.version || '1.0.0'}`));
+  console.log(colors.info(`Description: ${packageInfo.description || 'Crypto Price Alert Telegram Bot'}`));
   
-  console.log(colors.heading('\nสภาพแวดล้อมระบบ:'));
+  console.log(colors.heading('\nSystem Environment:'));
   console.log(colors.info(`Node.js: ${process.version}`));
-  console.log(colors.info(`ระบบปฏิบัติการ: ${os.platform()} ${os.release()}`));
-  console.log(colors.info(`สถาปัตยกรรม: ${os.arch()}`));
-  console.log(colors.info(`หน่วยความจำ (ทั้งหมด): ${Math.round(os.totalmem() / (1024 * 1024 * 1024))} GB`));
+  console.log(colors.info(`OS: Windows ${os.release()}`));
+  console.log(colors.info(`Architecture: ${os.arch()}`));
+  console.log(colors.info(`Memory (Total): ${Math.round(os.totalmem() / (1024 * 1024 * 1024))} GB`));
   
-  console.log(colors.heading('\nไฟล์กำหนดค่า:'));
+  console.log(colors.heading('\nConfiguration Files:'));
   const envExists = fs.existsSync(path.join(rootDir, '.env'));
-  console.log(colors.info(`.env file: ${envExists ? 'มี' : 'ไม่มี'}`));
+  console.log(colors.info(`.env file: ${envExists ? 'Present' : 'Not found'}`));
   
-  // สแกนหาบริการที่ติดตั้ง
-  console.log(colors.heading('\nสภาพแวดล้อมที่ติดตั้ง:'));
+  // Check installed environments
+  console.log(colors.heading('\nInstalled Environments:'));
   const hasPortableEnv = fs.existsSync(portableDir);
-  const hasLocalEnv = fs.existsSync(localEnvDir);
   
-  console.log(colors.info(`แบบพกพา: ${hasPortableEnv ? 'ติดตั้งแล้ว' : 'ไม่ได้ติดตั้ง'}`));
-  console.log(colors.info(`แบบติดตั้งในระบบ: ${hasLocalEnv ? 'ติดตั้งแล้ว' : 'ไม่ได้ติดตั้ง'}`));
+  console.log(colors.info(`Portable: ${hasPortableEnv ? 'Installed' : 'Not installed'}`));
+  }
+
+/**
+ * Sets up portable environment
+ */
+async function setupPortableEnvironment() {
+  console.log(colors.heading('Setting up portable environment...'));
   
-  // จำนวนไฟล์
-  console.log(colors.heading('\nสถิติโครงการ:'));
+  try {
+    await createEnvFile();
+    await runNodeScript('scripts/portable-env.js', ['install']);
+    console.log(colors.success('\nPortable environment setup completed'));
+    console.log(colors.info('You can start services with the services:start command'));
+  } catch (error) {
+    console.error(colors.error(`Setup failed: ${error.message}`));
+  }
+}
+
+/**
+ * Starts portable services
+ */
+async function startPortableServices() {
+  const hasPortableEnv = fs.existsSync(portableDir);
+  
+  if (!hasPortableEnv) {
+    console.log(colors.warning('Portable environment not found. Please run setup first.'));
+    return;
+  }
+  
+  console.log(colors.heading('Starting services...'));
+  try {
+    const startPath = path.join(portableDir, 'start-background.cmd');
+    await runCommand('cmd', ['/c', startPath]);
+    console.log(colors.success('Services started successfully'));
+  } catch (error) {
+    console.error(colors.error(`Failed to start services: ${error.message}`));
+  }
+}
+
+/**
+ * Stops portable services
+ */
+async function stopPortableServices() {
+  const hasPortableEnv = fs.existsSync(portableDir);
+  
+  if (!hasPortableEnv) {
+    console.log(colors.warning('Portable environment not found. No services to stop.'));
+    return;
+  }
+  
+  console.log(colors.heading('Stopping services...'));
+  try {
+    const stopPath = path.join(portableDir, 'stop-background.cmd');
+    await runCommand('cmd', ['/c', stopPath]);
+    console.log(colors.success('Services stopped successfully'));
+  } catch (error) {
+    console.error(colors.error(`Failed to stop services: ${error.message}`));
+  }
+}
+
+/**
+ * Starts the application
+ */
+async function startApplication(dev = false) {
+  // Check if services are running first
+  console.log(colors.info('Checking services status before starting application...'));
+  await checkServicesStatus();
+  
+  // Start the application
+  if (dev) {
+    console.log(colors.heading('\nStarting application in development mode...'));
+    await runCommand('npx', ['nodemon', 'index.js']);
+  } else {
+    console.log(colors.heading('\nStarting application...'));
+    await runCommand('node', ['index.js']);
+  }
+}
+
+/**
+ * Run tests
+ */
+async function runTests() {
+  console.log(colors.heading('Running tests...'));
+  try {
+    await runCommand('npm', ['test']);
+    console.log(colors.success('Tests completed'));
+  } catch (error) {
+    console.error(colors.error(`Tests failed: ${error.message}`));
+  }
+}
+
+/**
+ * Count files in the project
+ */
+async function countProjectFiles() {
   let jsFiles = 0;
   let totalFiles = 0;
   
@@ -645,100 +705,80 @@ async function stopServices() {
   console.log(colors.success('\nหยุดบริการทั้งหมดเรียบร้อยแล้ว'));
 }
 
-// กำหนด CLI
-displayBanner();
-program.version('1.0.0');
+// Set up the CLI commands
+program
+  .name('price-alert')
+  .description('CLI for the Price Alert Crypto Bot project')
+  .version('1.0.0');
 
-// คำสั่งหลัก
+// Setup commands
 program
   .command('setup')
-  .description('ตัวช่วยติดตั้งสภาพแวดล้อม')
-  .action(setupWizard);
+  .description('Set up portable environment')
+  .action(setupPortableEnvironment);
 
-program
-  .command('setup:local')
-  .description('ติดตั้งสภาพแวดล้อมแบบในระบบ')
-  .action(() => runNodeScript('scripts/setup-local.js'));
-
-program
-  .command('setup:portable')
-  .description('ติดตั้งสภาพแวดล้อมแบบพกพา')
-  .action(() => runNodeScript('scripts/portable-env.js', ['install']));
-
+// Service commands
 program
   .command('services')
-  .description('แสดงสถานะของบริการ')
+  .description('Check services status')
   .action(checkServicesStatus);
 
 program
   .command('services:start')
-  .description('เริ่มบริการทั้งหมด')
-  .action(startServices);
+  .description('Start services')
+  .action(startPortableServices);
 
 program
   .command('services:stop')
-  .description('หยุดบริการทั้งหมด')
-  .action(stopServices);
+  .description('Stop services')
+  .action(stopPortableServices);
 
+// Application commands
 program
   .command('start')
-  .description('เริ่มแอปพลิเคชัน (โหมดผลิต)')
-  .action(() => startApp(false));
+  .description('Start the application')
+  .action(() => startApplication(false));
 
 program
   .command('dev')
-  .description('เริ่มแอปพลิเคชันในโหมดพัฒนา')
-  .action(() => startApp(true));
+  .description('Start the application in development mode')
+  .action(() => startApplication(true));
 
+// Testing command
 program
   .command('test')
-  .description('รันการทดสอบทั้งหมด')
-  .action(() => runCommand('npm', ['test']));
+  .description('Run tests')
+  .action(runTests);
 
-program
-  .command('portable:start')
-  .description('เริ่มบริการแบบพกพา')
-  .action(() => runNodeScript('scripts/portable-env.js', ['start']));
-
-program
-  .command('portable:stop')
-  .description('หยุดบริการแบบพกพา')
-  .action(() => runNodeScript('scripts/portable-env.js', ['stop']));
-
-program
-  .command('portable:verify')
-  .description('ตรวจสอบการติดตั้งแบบพกพา')
-  .action(() => runNodeScript('scripts/verify-portable.js'));
-
-program
-  .command('logs')
-  .description('แสดงไฟล์บันทึกเหตุการณ์')
-  .action(showLogs);
-
-program
-  .command('clean')
-  .description('ทำความสะอาดไฟล์ที่ไม่จำเป็น')
-  .action(cleanProject);
-
-program
-  .command('db:reset')
-  .description('รีเซ็ตฐานข้อมูลและนำเข้าสคีมา')
-  .action(resetDatabase);
-
+// Info command
 program
   .command('info')
-  .description('แสดงข้อมูลเกี่ยวกับโครงการ')
+  .description('Show project information')
   .action(showProjectInfo);
 
+// Files count command
+program
+  .command('count-files')
+  .description('Count JavaScript and total files in the project')
+  .action(countProjectFiles);
+
+// Help command
 program
   .command('help')
-  .description('แสดงวิธีใช้งานโดยละเอียด')
+  .description('Show detailed help')
   .action(showDetailedHelp);
 
-// ถ้าไม่มีคำสั่งถูกระบุ แสดงความช่วยเหลือ
-if (process.argv.length <= 2) {
-  showDetailedHelp();
-}
+// Handle unknown commands
+program.on('command:*', () => {
+  console.error(colors.error(`Invalid command: ${program.args.join(' ')}`));
+  console.log(colors.info('See --help for a list of available commands.'));
+  process.exit(1);
+});
 
-program.parse(process.argv);
+// Default action if no command is specified
+if (process.argv.length === 2) {
+  showDetailedHelp();
+} else {
+  program.parse(process.argv);
+}
 

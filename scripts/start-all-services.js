@@ -1,6 +1,8 @@
 /**
- * สคริปท์เริ่มต้นแอปพลิเคชันแบบครบวงจร
- * เริ่มการทำงานของ Redis และ PostgreSQL ก่อนเริ่มแอปพลิเคชันหลัก
+ * Start All Services
+ * 
+ * This script launches all required services for the Price Alert application.
+ * It replaces the PowerShell-based scripts with a Node.js solution.
  */
 
 const spawn = require('cross-spawn');
@@ -11,7 +13,7 @@ const { promisify } = require('util');
 const exec = promisify(require('child_process').exec);
 const chalk = require('chalk');
 
-// สร้างกลไก logger อย่างง่าย
+// Simple logger
 const log = {
   info: (msg) => console.log(chalk.blue(`[INFO] ${msg}`)),
   success: (msg) => console.log(chalk.green(`[SUCCESS] ${msg}`)),
