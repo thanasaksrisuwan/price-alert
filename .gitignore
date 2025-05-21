@@ -49,6 +49,7 @@ Thumbs.db
 # Exclude entire portable environment directory
 portable-env/
 *.rdb
+local-env/
 
 # Docker volumes
 docker-volumes/

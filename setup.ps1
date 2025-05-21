@@ -95,7 +95,7 @@ if (-not(Test-Path -Path ".\.env")) {
         Copy-Item ".\.env.example" ".\.env"
         
         # แก้ไขการตั้งค่าฐานข้อมูลและ Redis
-        (Get-Content -Path ".\.env") -Replace "DATABASE_URL=postgres://username:password@localhost:5432/crypto_price_alert", "DATABASE_URL=postgres://$PG_USER:$PG_PASSWORD@localhost:5432/$PG_DB_NAME" | Set-Content -Path ".\.env"
+        (Get-Content -Path ".\.env") -Replace "DATABASE_URL=postgres://username:password@localhost:5432/crypto_price_alert", "DATABASE_URL=postgres://$($PG_USER):$($PG_PASSWORD)@localhost:5432/$($PG_DB_NAME)" | Set-Content -Path ".\.env"
         (Get-Content -Path ".\.env") -Replace "REDIS_URL=redis://localhost:6379", "REDIS_URL=redis://localhost:6379/0" | Set-Content -Path ".\.env"
         
         Write-Host "ไฟล์ .env ถูกสร้างขึ้นแล้ว โปรดตรวจสอบและแก้ไขค่าตัวแปรอื่นๆ ตามความจำเป็น" -ForegroundColor Green
