@@ -57,11 +57,19 @@ const config = {
     checkInterval: parseInt(process.env.ALERT_CHECK_INTERVAL, 10) || 60000, // ตรวจสอบทุก 60 วินาที
     maxFreeAlerts: parseInt(process.env.MAX_FREE_ALERTS, 10) || 10,
   },
-  
-  // การตั้งค่าคิว
+    // การตั้งค่าคิว
   queue: {
-    concurrency: parseInt(process.env.QUEUE_CONCURRENCY, 10) || 5,
+    concurrency: parseInt(process.env.QUEUE_CONCURRENCY, 10) || 10,
+    websocketConcurrency: parseInt(process.env.WEBSOCKET_CONCURRENCY, 10) || 20
   },
+  
+  // การตั้งค่าการเชื่อมต่อ WebSocket
+  websocket: {
+    maxConnections: parseInt(process.env.MAX_WEBSOCKET_CONNECTIONS, 10) || 50,
+    connectionPoolSize: parseInt(process.env.WEBSOCKET_CONNECTION_POOL_SIZE, 10) || 25,
+    reconnectInterval: parseInt(process.env.WEBSOCKET_RECONNECT_INTERVAL, 10) || 5000,
+    reconnectAttempts: parseInt(process.env.WEBSOCKET_RECONNECT_ATTEMPTS, 10) || 5
+  }
 };
 
 module.exports = config;

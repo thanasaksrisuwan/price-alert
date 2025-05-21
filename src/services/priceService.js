@@ -1,12 +1,13 @@
 /**
  * บริการจัดการข้อมูลราคาคริปโต
- * ดึงและจัดการข้อมูลราคาจาก API ต่างๆ
+ * ดึงและจัดการข้อมูลราคาจาก API ต่างๆ และ WebSocket
  */
 
 const axios = require('axios');
 const logger = require('../utils/logger').createModuleLogger('PriceService');
 const config = require('../config');
 const redis = require('../config/redis');
+const binancePriceStreamService = require('./binancePriceStreamService');
 
 // ระยะเวลาที่ข้อมูลราคาใน cache จะหมดอายุ (วินาที)
 const PRICE_CACHE_EXPIRY = 60; // 1 นาที
@@ -29,7 +30,42 @@ async function getPrice(symbol, currency = 'USD', forceUpdate = false) {
       return cachedData;
     }
     
-    // ถ้าไม่มีใน cache ให้ดึงจาก API
+    // ตรวจสอบข้อมูลจาก Binance WebSocket สตรีมก่อน (เร็วที่สุด)
+    const streamData = binancePriceStreamService.getLatestPriceData(symbol);
+    
+    if (streamData && !forceUpdate) {
+      logger.debug(`Retrieved price data from WebSocket stream for ${symbol}`);
+      
+      // ถ้าไม่ใช่ USD ต้องแปลงราคา
+      if (currency !== 'USD') {
+        try {
+          const exchangeRate = await getExchangeRate('USD', currency);
+          
+          streamData.price = streamData.price * exchangeRate;
+          streamData.priceChange24h = streamData.priceChange24h * exchangeRate;
+          streamData.high24h = streamData.high24h * exchangeRate;
+          streamData.low24h = streamData.low24h * exchangeRate;
+          streamData.volume24h = streamData.volume24h * exchangeRate;
+          
+          // บันทึกใน cache
+          await redis.set(cacheKey, streamData, PRICE_CACHE_EXPIRY);
+        } catch (exchangeError) {
+          logger.error(`Error converting currency for ${symbol}:`, exchangeError);
+        }
+      } else {
+        // บันทึกใน cache (USD)
+        await redis.set(cacheKey, streamData, PRICE_CACHE_EXPIRY);
+      }
+      
+      return streamData;
+    }
+    
+    // ถ้าไม่มีข้อมูลจากสตรีม หรือมีการบังคับอัพเดต ให้ลองดึงจาก API
+    
+    // ลองสมัครสมาชิก WebSocket stream สำหรับการอัพเดตในอนาคต
+    binancePriceStreamService.subscribeToPriceUpdates(symbol)
+      .catch(err => logger.error(`Failed to subscribe to price stream for ${symbol}:`, err));
+    
     // ลองดึงจาก CoinGecko ก่อน
     try {
       const priceData = await getPriceFromCoinGecko(symbol, currency);

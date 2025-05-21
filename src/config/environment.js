@@ -56,10 +56,10 @@ const environment = {
         checkInterval: parseInt(getEnvVar('ALERT_CHECK_INTERVAL', '60000')),
         maxFreeAlerts: parseInt(getEnvVar('MAX_FREE_ALERTS', '10'))
     },
-    
-    // ตั้งค่าคิว
+      // ตั้งค่าคิว
     queue: {
-        concurrency: parseInt(getEnvVar('QUEUE_CONCURRENCY', '5'))
+        concurrency: parseInt(getEnvVar('QUEUE_CONCURRENCY', '10')),
+        websocketConcurrency: parseInt(getEnvVar('WEBSOCKET_CONCURRENCY', '20'))
     },
     
     // ตรวจสอบว่าเป็นสภาพแวดล้อมการพัฒนาหรือไม่
