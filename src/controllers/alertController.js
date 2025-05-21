@@ -121,17 +121,16 @@ async function handleListAlerts(ctx) {
     if (!alerts || alerts.length === 0) {
       return ctx.reply('คุณยังไม่มีการแจ้งเตือนที่ตั้งไว้\n\nใช้คำสั่ง /alert เพื่อตั้งการแจ้งเตือนใหม่');
     }
+      // สร้างข้อความแสดงรายการการแจ้งเตือนแบบไม่ใช้ Markdown เพื่อป้องกัน parsing errors
+    let message = '📊 รายการแจ้งเตือนที่เปิดใช้งาน 📊\n\n';
     
-    // สร้างข้อความแสดงรายการการแจ้งเตือน
-    let message = '📊 *รายการแจ้งเตือนที่เปิดใช้งาน* 📊\n\n';
-    
-    for (const alert of alerts) {
-      const condition = alert.alert_type.includes('above') 
+    for (const alert of alerts) {      const condition = alert.alert_type.includes('above') 
         ? 'สูงกว่า' 
         : alert.alert_type.includes('below') 
           ? 'ต่ำกว่า' 
           : 'เปลี่ยนแปลง';
       
+      // Ensure consistent formatting and properly escape any special markdown characters
       const alertInfo = `ID: ${alert.id} - ${alert.symbol} ${condition} ${alert.target_value} ${user.default_currency}\n` +
                        `ราคาตั้งต้น: ${alert.current_value || 'N/A'} ${user.default_currency}\n` +
                        `ตั้งเมื่อ: ${new Date(alert.created_at).toLocaleString()}\n\n`;
@@ -140,9 +139,34 @@ async function handleListAlerts(ctx) {
     }
     
     message += `\nลบการแจ้งเตือน: /remove <alert_id>\nตัวอย่าง: /remove ${alerts[0].id}`;
-    
-    await ctx.replyWithMarkdown(message);
-    logger.info(`Listed alerts for user ${user.id}`);
+      try {
+      // Use regular reply instead of Markdown to avoid parsing issues with Thai characters
+      await ctx.reply(message);
+      logger.info(`Listed alerts for user ${user.id}`);
+    } catch (telegramError) {
+      logger.error('Error sending alerts message:', telegramError);
+      
+      // Fallback: Try sending without any formatting as a last resort
+      try {
+        const plainMessage = 'รายการแจ้งเตือนที่เปิดใช้งาน\n\n' + 
+          alerts.map(alert => {
+            const condition = alert.alert_type.includes('above') 
+              ? 'สูงกว่า' 
+              : alert.alert_type.includes('below') 
+                ? 'ต่ำกว่า' 
+                : 'เปลี่ยนแปลง';
+            return `ID: ${alert.id} - ${alert.symbol} ${condition} ${alert.target_value} ${user.default_currency}\n` +
+                  `ราคาตั้งต้น: ${alert.current_value || 'N/A'} ${user.default_currency}\n` +
+                  `ตั้งเมื่อ: ${new Date(alert.created_at).toLocaleString()}\n`;
+          }).join('\n') +
+          `\nลบการแจ้งเตือน: /remove <alert_id>\nตัวอย่าง: /remove ${alerts[0].id}`;
+        
+        await ctx.reply(plainMessage);
+      } catch (fallbackError) {
+        logger.error('Even fallback message failed:', fallbackError);
+        await ctx.reply('เกิดข้อผิดพลาดในการแสดงรายการแจ้งเตือน โปรดลองอีกครั้งในภายหลัง');
+      }
+    }
   } catch (error) {
     logger.error('Error in handleListAlerts:', error);
     ctx.reply('เกิดข้อผิดพลาด โปรดลองอีกครั้งในภายหลัง');

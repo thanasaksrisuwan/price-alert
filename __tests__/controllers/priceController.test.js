@@ -13,8 +13,7 @@ jest.mock('../../src/models/user');
 // Access private functions for testing
 const { formatCurrency, getCurrencySymbol } = priceController.__testExports;
 
-describe('PriceController Tests', () => {
-  describe('formatCurrency', () => {
+describe('PriceController Tests', () => {  describe('formatCurrency', () => {
     it('should format Thai Baht correctly', () => {
       // Arrange & Act
       const result1 = formatCurrency(1234.56, 'THB');
@@ -47,6 +46,16 @@ describe('PriceController Tests', () => {
       // Assert
       expect(result1).toBe('1.23M ฿');
       expect(result2).toBe('$5.12B');
+    });
+    
+    it('should handle null and undefined values gracefully', () => {
+      // Arrange & Act
+      const resultNull = formatCurrency(null, 'USD');
+      const resultUndefined = formatCurrency(undefined, 'THB');
+      
+      // Assert
+      expect(resultNull).toBe('$0.00');
+      expect(resultUndefined).toBe('฿0.00');
     });
   });
   

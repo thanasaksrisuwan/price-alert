@@ -468,5 +468,8 @@ async function getExchangeRate(from, to) {
 }
 
 module.exports = {
-  getPrice
+  getPrice,
+  // Expose these for the enhanced price service
+  getPriceFromCoinGecko,
+  getPriceFromCoinMarketCap
 };

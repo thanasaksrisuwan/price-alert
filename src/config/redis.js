@@ -138,6 +138,14 @@ async function disconnect() {
   }
 }
 
+// Helper function for testing to set a custom Redis client
+function _testSetClient(client) {
+  redisClient = client;
+  redisLogger.info('Redis client overridden for testing');
+  isRedisAvailable = true;
+  return redisClient;
+}
+
 module.exports = {
   redisClient,
   connect,
@@ -145,4 +153,5 @@ module.exports = {
   set,
   get,
   del,
+  _testSetClient, // Added for testing purposes
 };

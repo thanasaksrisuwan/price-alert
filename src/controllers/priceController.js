@@ -6,6 +6,7 @@
 const logger = require('../utils/logger').createModuleLogger('PriceController');
 const { isValidCryptoSymbol } = require('../utils/validators');
 const PriceService = require('../services/priceService');
+const EnhancedPriceService = require('../services/enhancedPriceService');
 const UserModel = require('../models/user');
 
 /**
@@ -35,9 +36,8 @@ async function handlePriceCommand(ctx) {
     
     // เริ่มแสดงการโหลดข้อมูล
     const loadingMessage = await ctx.reply(`กำลังค้นหาราคา ${symbol}...`);
-    
-    // ดึงข้อมูลราคา
-    const priceData = await PriceService.getPrice(symbol, currency);
+      // ดึงข้อมูลราคา
+    let priceData = await PriceService.getPrice(symbol, currency);
     
     if (!priceData) {
       await ctx.telegram.editMessageText(
@@ -48,6 +48,9 @@ async function handlePriceCommand(ctx) {
       );
       return;
     }
+    
+    // เสริมข้อมูล market cap ถ้าจำเป็น
+    priceData = await EnhancedPriceService.enhancePriceData(priceData, symbol, currency);
     
     // สร้างข้อความแสดงราคาและข้อมูลเพิ่มเติม
     const message = formatPriceMessage(priceData, symbol, currency);
@@ -89,20 +92,31 @@ function formatPriceMessage(priceData, symbol, currency) {
     imageUrl
   } = priceData;
   
+  // ตรวจสอบค่าที่จำเป็นและกำหนดค่าเริ่มต้น
+  const safeName = name || symbol;
+  const safePrice = price || 0;
+  const safePriceChange24h = priceChange24h || 0;
+  const safePriceChangePercentage24h = priceChangePercentage24h || 0;
+  const safeMarketCap = marketCap || 0;
+  const safeVolume24h = volume24h || 0;
+  const safeHigh24h = high24h || 0;
+  const safeLow24h = low24h || 0;
+  const safeLastUpdated = lastUpdated || new Date();
+  
   // สร้างตัวบ่งชี้แนวโน้มราคา
-  const trendIndicator = priceChangePercentage24h >= 0 ? '🟢' : '🔴';
+  const trendIndicator = safePriceChangePercentage24h >= 0 ? '🟢' : '🔴';
   
   // จัดรูปแบบราคา
-  const formattedPrice = formatCurrency(price, currency);
-  const formattedMarketCap = formatCurrency(marketCap, currency, true);
-  const formattedVolume = formatCurrency(volume24h, currency, true);
-  const formattedHigh = formatCurrency(high24h, currency);
-  const formattedLow = formatCurrency(low24h, currency);
+  const formattedPrice = formatCurrency(safePrice, currency);
+  const formattedMarketCap = formatCurrency(safeMarketCap, currency, true);
+  const formattedVolume = formatCurrency(safeVolume24h, currency, true);
+  const formattedHigh = formatCurrency(safeHigh24h, currency);
+  const formattedLow = formatCurrency(safeLow24h, currency);
   
   // จัดรูปแบบการเปลี่ยนแปลงราคา
-  const changePrefix = priceChangePercentage24h >= 0 ? '+' : '';
-  const formattedChange = `${changePrefix}${priceChangePercentage24h.toFixed(2)}%`;
-  const formattedPriceChange = formatCurrency(priceChange24h, currency);
+  const changePrefix = safePriceChangePercentage24h >= 0 ? '+' : '';
+  const formattedChange = `${changePrefix}${safePriceChangePercentage24h.toFixed(2)}%`;
+  const formattedPriceChange = formatCurrency(safePriceChange24h, currency);
   
   // สร้างข้อความ
   return `
@@ -129,14 +143,28 @@ ${trendIndicator} *${name} (${symbol})* ${trendIndicator}
  * @returns {string} - ค่าเงินที่จัดรูปแบบแล้ว
  */
 function formatCurrency(value, currency, compact = false) {
-  const currencySymbol = getCurrencySymbol(currency);
+  // ตรวจสอบค่า null หรือ undefined
+  if (value === null || value === undefined) {
+    logger.warn(`Attempted to format undefined or null value as currency: ${currency}`);
+    return `${getCurrencySymbol(currency)}0.00`;
+  }
+    const currencySymbol = getCurrencySymbol(currency);
   
   if (compact && value >= 1e9) {
-    return `${currencySymbol}${(value / 1e9).toFixed(2)}B`;
+    // Thai Baht shows symbol after the number
+    return currency === 'THB'
+      ? `${(value / 1e9).toFixed(2)}B ${currencySymbol}`
+      : `${currencySymbol}${(value / 1e9).toFixed(2)}B`;
   } else if (compact && value >= 1e6) {
-    return `${currencySymbol}${(value / 1e6).toFixed(2)}M`;
+    // Thai Baht shows symbol after the number
+    return currency === 'THB'
+      ? `${(value / 1e6).toFixed(2)}M ${currencySymbol}`
+      : `${currencySymbol}${(value / 1e6).toFixed(2)}M`;
   } else if (compact && value >= 1e3) {
-    return `${currencySymbol}${(value / 1e3).toFixed(2)}K`;
+    // Thai Baht shows symbol after the number
+    return currency === 'THB'
+      ? `${(value / 1e3).toFixed(2)}K ${currencySymbol}`
+      : `${currencySymbol}${(value / 1e3).toFixed(2)}K`;
   }
   
   // จัดรูปแบบโดยใช้ locale ที่เหมาะสมตามสกุลเงิน
