@@ -10,6 +10,7 @@ const { Telegraf } = require('telegraf');
 const database = require('./src/config/database');
 const redis = require('./src/config/redis');
 const queueService = require('./src/services/queueService');
+const binanceInitializer = require('./src/services/binanceInitializer');
 
 // สร้าง Express app
 const app = express();
@@ -39,6 +40,17 @@ async function startApp() {
     // เริ่มต้นคิวงาน
     await queueService.initializeQueues();
     logger.info('Queue service initialized');
+    
+    // เริ่มต้นติดตามข้อมูลราคาจาก Binance สำหรับเหรียญยอดนิยม
+    binanceInitializer.initializePopularCryptoStreams()
+      .then(result => {
+        if (result.success) {
+          logger.info(`Successfully connected to Binance streams for ${binanceInitializer.POPULAR_CRYPTOS.length} popular cryptocurrencies`);
+        } else {
+          logger.warn('Connection to Binance streams was not fully successful, will retry on-demand');
+        }
+      })
+      .catch(err => logger.error('Error initializing Binance streams:', err));
     
     // เริ่มโหลด command handlers
     require('./src/bot')(bot);

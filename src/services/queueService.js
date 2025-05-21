@@ -91,17 +91,34 @@ websocketQueue.process(websocketConcurrency, async (job) => {
  */
 async function scheduleAlertChecks() {
   try {
+    // Get the interval value first so we can use it consistently
+    const interval = config.alerts.checkInterval || 60000; // ms
+    
     // ลบงานที่กำหนดเวลาไว้ทั้งหมดก่อน
     try {
-      await alertCheckQueue.removeRepeatable();
+      // Get all repeatable jobs first
+      const repeatableJobs = await alertCheckQueue.getRepeatableJobs();
+      
+      // Only attempt to remove jobs that exist
+      if (repeatableJobs && repeatableJobs.length > 0) {
+        for (const job of repeatableJobs) {
+          if (job.id === 'regularAlertCheck' || !job.id) {
+            await alertCheckQueue.removeRepeatable({
+              jobId: job.id || 'regularAlertCheck',
+              repeat: {
+                every: job.every || interval
+              }
+            });
+            logger.debug(`Removed existing repeatable alert check job: ${job.id || 'regularAlertCheck'}`);
+          }
+        }
+      }
     } catch (removeError) {
       logger.warn('Error removing repeatable alert checks, might be first run:', removeError.message);
       // Continue execution even if this fails
     }
     
     // กำหนดเวลาตรวจสอบการแจ้งเตือนทุก X นาที
-    const interval = config.alerts.checkInterval || 60000; // ms
-    
     try {
       await alertCheckQueue.add(
         {}, // empty data
@@ -133,7 +150,23 @@ async function schedulePopularPriceUpdates(popularSymbols = ['BTC', 'ETH', 'USDT
   try {
     // ลบงานที่กำหนดเวลาไว้ทั้งหมดก่อน    
     try {
-      await priceUpdateQueue.removeRepeatable('popularCoins');
+      // Get all repeatable jobs first
+      const repeatableJobs = await priceUpdateQueue.getRepeatableJobs();
+      
+      // Only attempt to remove jobs that exist
+      if (repeatableJobs && repeatableJobs.length > 0) {
+        for (const job of repeatableJobs) {
+          if (job.id === 'popularCoins' || !job.id) {
+            await priceUpdateQueue.removeRepeatable({
+              jobId: job.id || 'popularCoins',
+              repeat: {
+                every: job.every || 60000 // Default to 1 minute if not specified
+              }
+            });
+            logger.debug(`Removed existing repeatable price update job: ${job.id || 'popularCoins'}`);
+          }
+        }
+      }
     } catch (removeError) {
       logger.warn('Error removing repeatable price updates, might be first run:', removeError);
       // Continue execution even if this fails

@@ -222,5 +222,12 @@ function startAlertChecker() {
 module.exports = {
   startAlertChecker,
   checkAllAlerts,
-  sendAlertNotification
+  sendAlertNotification,
+  // Expose private functions for testing
+  __test__: {
+    checkSingleAlert,
+    checkAlertsForSymbol,
+    groupAlertsBySymbol,
+    getExchangeRate
+  }
 };
