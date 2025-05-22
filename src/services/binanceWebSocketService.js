@@ -88,6 +88,154 @@ class BinanceWebSocketManager extends EventEmitter {
   }
 
   /**
+   * สร้างและจัดการการเชื่อมต่อ WebSocket
+   * @param {string} url - URL ของ WebSocket
+   * @param {string} streamName - ชื่อของ stream
+   * @param {function} [onMessageCallback] - ฟังก์ชันที่จะเรียกเมื่อได้รับข้อมูล
+   * @returns {Promise<boolean>} - สถานะการเชื่อมต่อ
+   * @private
+   */
+  async _createAndManageWebSocket(url, streamName, onMessageCallback) {
+    try {
+      // ตรวจสอบว่าเชื่อมต่อกับ stream นี้อยู่แล้วหรือไม่
+      if (this.connections.has(streamName)) {
+        logger.info(`Already connected to stream: ${streamName}`);
+        if (onMessageCallback) {
+          if (!this.streamCallbacks.has(streamName)) {
+            this.streamCallbacks.set(streamName, []);
+          }
+          this.streamCallbacks.get(streamName).push(onMessageCallback);
+        }
+        return true;
+      }
+
+      const ws = new WebSocket(url);
+      let reconnectAttempts = 0;
+      let pingInterval;
+
+      this.connections.set(streamName, {
+        ws,
+        isAlive: false,
+        pingInterval: null,
+        reconnectAttempts: 0,
+      });
+
+      if (onMessageCallback) {
+        this.streamCallbacks.set(streamName, [onMessageCallback]);
+      } else {
+        this.streamCallbacks.set(streamName, []);
+      }
+
+      return new Promise((resolve, reject) => {
+        ws.on('open', () => {
+          logger.info(`Connected to ${streamName}`);
+          const connection = this.connections.get(streamName);
+          if (connection) {
+            connection.isAlive = true;
+            connection.reconnectAttempts = 0; // Reset on successful connection
+            pingInterval = setInterval(() => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.ping();
+              }
+            }, 30000);
+            connection.pingInterval = pingInterval;
+            this.connections.set(streamName, connection);
+          }
+          this.emit('connected', streamName);
+          resolve(true);
+        });
+
+        ws.on('message', (data) => {
+          try {
+            const parsedData = JSON.parse(data);
+            const callbacks = this.streamCallbacks.get(streamName) || [];
+            callbacks.forEach(callback => {
+              try {
+                callback(parsedData);
+              } catch (callbackError) {
+                logger.error(`Error in stream callback for ${streamName}:`, callbackError);
+              }
+            });
+            this.emit('message', streamName, parsedData);
+          } catch (parseError) {
+            logger.error(`Error parsing message from ${streamName}:`, parseError);
+          }
+        });
+
+        ws.on('pong', () => {
+          const connection = this.connections.get(streamName);
+          if (connection) {
+            connection.isAlive = true;
+            this.connections.set(streamName, connection);
+          }
+        });
+
+        ws.on('error', (error) => {
+          logger.error(`WebSocket error for ${streamName}:`, error);
+          this.emit('error', streamName, error);
+        });
+
+        ws.on('close', async (code, reason) => {
+          logger.warn(`Connection closed for ${streamName}: ${code} - ${String(reason)}`);
+          const connection = this.connections.get(streamName);
+          if (connection && connection.pingInterval) {
+            clearInterval(connection.pingInterval);
+          }
+          this.emit('disconnected', streamName);
+
+          if (connection) {
+            reconnectAttempts = connection.reconnectAttempts || 0;
+            if (reconnectAttempts < this.maxReconnectAttempts) {
+              reconnectAttempts++;
+              connection.reconnectAttempts = reconnectAttempts;
+              this.connections.set(streamName, connection);
+
+              logger.info(`Attempting to reconnect to ${streamName} (${reconnectAttempts}/${this.maxReconnectAttempts})`);
+              setTimeout(async () => {
+                try {
+                  if (streamName.startsWith('group') || streamName.includes('/')) {
+                    const originalStreamNames = streamName.startsWith('group') ? streamName.substring(streamName.indexOf('_') + 1).split('/') : streamName.split('/');
+                    await this._createAndManageWebSocket(`${this.combinedBaseUrl}${originalStreamNames.join('/')}`, streamName, onMessageCallback);
+                  } else if (streamName === 'binance-ws-api') {
+                    await this._createAndManageWebSocket(this.apiWsUrl, streamName, onMessageCallback);
+                  } else {
+                    await this._createAndManageWebSocket(`${this.baseWsUrl}/${streamName}`, streamName, onMessageCallback);
+                  }
+                  logger.info(`Reconnected to ${streamName}`);
+                } catch (reconnectError) {
+                  logger.error(`Failed to reconnect to ${streamName}:`, reconnectError);
+                }
+              }, this.reconnectInterval * Math.pow(2, reconnectAttempts - 1));
+            } else {
+              logger.error(`Max reconnect attempts reached for ${streamName}, giving up.`);
+              this.connections.delete(streamName);
+              this.streamCallbacks.delete(streamName);
+              reject(new Error(`Max reconnect attempts reached for ${streamName}`));
+            }
+          } else {
+            logger.warn(`Connection for ${streamName} not found during close event, possibly already cleaned up.`);
+            reject(new Error(`Connection for ${streamName} not found during close`));
+          }
+        });
+
+        const connectionTimeout = setTimeout(() => {
+          if (ws.readyState !== WebSocket.OPEN) {
+            logger.warn(`Initial connection attempt to ${streamName} timed out.`);
+            ws.terminate();
+            reject(new Error(`Connection attempt to ${streamName} timed out`));
+          }
+        }, config.websocket.connectionTimeout || 15000);
+
+        ws.once('open', () => clearTimeout(connectionTimeout));
+        ws.once('error', () => clearTimeout(connectionTimeout));
+      });
+    } catch (error) {
+      logger.error(`Error in _createAndManageWebSocket for ${streamName}:`, error);
+      return false;
+    }
+  }
+
+  /**
    * เชื่อมต่อกับ stream เดี่ยว
    * @param {string} streamName - ชื่อของ stream ที่ต้องการเชื่อมต่อ
    * @param {function} onMessageCallback - ฟังก์ชันที่จะเรียกเมื่อได้รับข้อมูล
@@ -95,40 +243,24 @@ class BinanceWebSocketManager extends EventEmitter {
    */
   async connectToStream(streamName, onMessageCallback) {
     try {
-      // ตรวจสอบว่าเชื่อมต่อกับ stream นี้อยู่แล้วหรือไม่
-      if (this.connections.has(streamName)) {
-        logger.info(`Already connected to stream: ${streamName}`);
-        
-        // เพิ่ม callback ใหม่สำหรับ stream นี้
-        if (onMessageCallback) {
-          if (!this.streamCallbacks.has(streamName)) {
-            this.streamCallbacks.set(streamName, []);
-          }
-          this.streamCallbacks.get(streamName).push(onMessageCallback);
-        }
-        
-        return true;
-      }
-      
-      // เพิ่มงานในคิวการเชื่อมต่อเพื่อทำงานพร้อมกัน
       return new Promise((resolve, reject) => {
         this.connectionQueue.push({
+          type: 'single',
           streamName,
           onMessageCallback,
           resolver: resolve,
-          rejecter: reject
+          rejecter: reject,
         });
-        
-        // เริ่มประมวลผลคิวการเชื่อมต่อ (ถ้ายังไม่มีการประมวลผล)
         if (!this.isProcessingQueue) {
           this.processConnectionQueue();
         }
       });
     } catch (error) {
-      logger.error(`Error connecting to stream ${streamName}:`, error);
+      logger.error(`Error queuing connection for stream ${streamName}:`, error);
       return false;
     }
   }
+
   /**
    * เชื่อมต่อกับหลาย streams พร้อมกัน โดยใช้ combined stream
    * @param {Array<string>} streamNames - รายชื่อ streams ที่ต้องการเชื่อมต่อ
@@ -137,469 +269,218 @@ class BinanceWebSocketManager extends EventEmitter {
    */
   async connectToCombinedStreams(streamNames, onMessageCallback) {
     try {
-      const combinedStreamName = streamNames.join('/');
-      
-      // ตรวจสอบว่าเชื่อมต่ออยู่แล้วหรือไม่
-      if (this.connections.has(combinedStreamName)) {
-        logger.info(`Already connected to combined stream: ${combinedStreamName}`);
-        
-        // เพิ่ม callback ใหม่
-        if (onMessageCallback) {
-          if (!this.streamCallbacks.has(combinedStreamName)) {
-            this.streamCallbacks.set(combinedStreamName, []);
-          }
-          this.streamCallbacks.get(combinedStreamName).push(onMessageCallback);
-        }
-        
-        return true;
-      }
-      
-      // สำหรับเชื่อมต่อพร้อมกันจำนวนมาก: แบ่งเป็นกลุ่มย่อย
-      const MAX_STREAMS_PER_CONNECTION = 25; // ค่าสูงสุดที่ Binance รองรับ
-      
+      const MAX_STREAMS_PER_CONNECTION = config.websocket.maxStreamsPerConnection || 25;
+
       if (streamNames.length > MAX_STREAMS_PER_CONNECTION) {
-        logger.info(`Splitting ${streamNames.length} streams into multiple connections`);
-        
-        // แบ่งเป็นกลุ่มๆ ละไม่เกิน MAX_STREAMS_PER_CONNECTION
+        logger.info(`Splitting ${streamNames.length} streams into multiple combined connections (max ${MAX_STREAMS_PER_CONNECTION} per connection)`);
         const groups = [];
         for (let i = 0; i < streamNames.length; i += MAX_STREAMS_PER_CONNECTION) {
           groups.push(streamNames.slice(i, i + MAX_STREAMS_PER_CONNECTION));
         }
-        
-        // เชื่อมต่อแต่ละกลุ่มพร้อมกัน
-        const results = await Promise.all(
-          groups.map((group, index) => 
-            this._connectToCombinedStreamsGroup(group, onMessageCallback, index)
-          )
-        );
-        
-        // ตรวจสอบว่าทุกกลุ่มเชื่อมต่อสำเร็จ
-        return !results.includes(false);
-      }
-      
-      // สร้าง URL สำหรับ combined stream
-      const combinedUrl = `${this.combinedBaseUrl}${streamNames.join('/')}`;
-      
-      // สร้าง WebSocket connection
-      const ws = new WebSocket(combinedUrl);
-      let reconnectAttempts = 0;
-      let pingInterval;
-      
-      // บันทึกการเชื่อมต่อ
-      this.connections.set(combinedStreamName, {
-        ws,
-        isAlive: false,
-        pingInterval: null,
-        reconnectAttempts: 0
-      });
-      
-      // บันทึก callback
-      if (onMessageCallback) {
-        this.streamCallbacks.set(combinedStreamName, [onMessageCallback]);
-      } else {
-        this.streamCallbacks.set(combinedStreamName, []);
-      }
-      
-      // ตั้งค่า event handlers คล้ายกับ connectToStream
-      ws.on('open', () => {
-        logger.info(`Connected to combined streams: ${combinedStreamName}`);
-        
-        const connection = this.connections.get(combinedStreamName);
-        connection.isAlive = true;
-        reconnectAttempts = 0;
-        
-        pingInterval = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.ping();
-          }
-        }, 30000);
-        
-        connection.pingInterval = pingInterval;
-        this.connections.set(combinedStreamName, connection);
-        
-        this.emit('connected', combinedStreamName);
-      });
-      
-      ws.on('message', (data) => {
-        try {
-          const parsedData = JSON.parse(data);
-          
-          // เรียกใช้ callbacks
-          const callbacks = this.streamCallbacks.get(combinedStreamName) || [];
-          callbacks.forEach(callback => {
-            try {
-              callback(parsedData);
-            } catch (callbackError) {
-              logger.error(`Error in combined stream callback:`, callbackError);
-            }
-          });
-          
-          this.emit('message', combinedStreamName, parsedData);
-        } catch (parseError) {
-          logger.error(`Error parsing message from combined stream:`, parseError);
-        }
-      });
-      
-      // ตั้งค่า handlers สำหรับ error, close, และ pong เหมือนกับ connectToStream
-      ws.on('pong', () => {
-        const connection = this.connections.get(combinedStreamName);
-        if (connection) {
-          connection.isAlive = true;
-          this.connections.set(combinedStreamName, connection);
-        }
-      });
-      
-      ws.on('error', (error) => {
-        logger.error(`Combined WebSocket error:`, error);
-        this.emit('error', combinedStreamName, error);
-      });
-      
-      ws.on('close', async (code, reason) => {
-        logger.warn(`Combined connection closed: ${code} - ${reason}`);
-        
-        const connection = this.connections.get(combinedStreamName);
-        if (connection && connection.pingInterval) {
-          clearInterval(connection.pingInterval);
-        }
-        
-        this.emit('disconnected', combinedStreamName);
-        
-        if (reconnectAttempts < this.maxReconnectAttempts) {
-          reconnectAttempts++;
-          logger.info(`Attempting to reconnect to combined stream (${reconnectAttempts}/${this.maxReconnectAttempts})`);
-          
-          setTimeout(async () => {
-            try {
-              await this.connectToCombinedStreams(streamNames);
-              logger.info(`Reconnected to combined stream`);
-            } catch (reconnectError) {
-              logger.error(`Failed to reconnect to combined stream:`, reconnectError);
-            }
-          }, this.reconnectInterval);
-        } else {
-          logger.error(`Max reconnect attempts reached for combined stream, giving up`);
-          this.connections.delete(combinedStreamName);
-        }
-      });
-      
-      return new Promise((resolve) => {
-        ws.once('open', () => resolve(true));
-        ws.once('error', () => resolve(false));
-      });
-      
-    } catch (error) {
-      logger.error(`Error connecting to combined streams:`, error);
-      return false;
-    }
-  }
 
-  /**
-   * เชื่อมต่อกับกลุ่มย่อยของ combined streams
-   * @param {Array<string>} streamNames - รายชื่อ streams ในกลุ่ม
-   * @param {function} onMessageCallback - ฟังก์ชันที่จะเรียกเมื่อได้รับข้อมูล
-   * @param {number} groupIndex - ลำดับกลุ่ม
-   * @returns {Promise<boolean>} - สถานะการเชื่อมต่อ
-   * @private
-   */
-  async _connectToCombinedStreamsGroup(streamNames, onMessageCallback, groupIndex) {
-    try {
-      const combinedStreamName = `group${groupIndex}_${streamNames.join('/')}`;
-      
-      // ตรวจสอบว่าเชื่อมต่ออยู่แล้วหรือไม่
-      if (this.connections.has(combinedStreamName)) {
-        logger.info(`Already connected to combined stream group: ${combinedStreamName}`);
-        
-        // เพิ่ม callback ใหม่
-        if (onMessageCallback) {
-          if (!this.streamCallbacks.has(combinedStreamName)) {
-            this.streamCallbacks.set(combinedStreamName, []);
-          }
-          this.streamCallbacks.get(combinedStreamName).push(onMessageCallback);
-        }
-        
-        return true;
-      }
-      
-      // สร้าง URL สำหรับ combined stream
-      const combinedUrl = `${this.combinedBaseUrl}${streamNames.join('/')}`;
-      
-      // สร้าง WebSocket connection
-      const ws = new WebSocket(combinedUrl);
-      let reconnectAttempts = 0;
-      let pingInterval;
-      
-      // บันทึกการเชื่อมต่อ
-      this.connections.set(combinedStreamName, {
-        ws,
-        isAlive: false,
-        pingInterval: null,
-        reconnectAttempts: 0
-      });
-      
-      // บันทึก callback
-      if (onMessageCallback) {
-        this.streamCallbacks.set(combinedStreamName, [onMessageCallback]);
+        const results = await Promise.all(
+          groups.map((group, index) => {
+            const groupStreamName = `group${index}_${group.join('/')}`;
+            return new Promise((resolve, reject) => {
+              this.connectionQueue.push({
+                type: 'combined',
+                streamName: groupStreamName,
+                originalStreamNames: group,
+                onMessageCallback,
+                resolver: resolve,
+                rejecter: reject,
+              });
+              if (!this.isProcessingQueue) {
+                this.processConnectionQueue();
+              }
+            });
+          })
+        );
+        return !results.includes(false);
       } else {
-        this.streamCallbacks.set(combinedStreamName, []);
-      }
-      
-      // ตั้งค่า event handlers คล้ายกับ connectToStream
-      ws.on('open', () => {
-        logger.info(`Connected to combined streams group ${groupIndex}: ${combinedStreamName}`);
-        
-        const connection = this.connections.get(combinedStreamName);
-        connection.isAlive = true;
-        reconnectAttempts = 0;
-        
-        pingInterval = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.ping();
-          }
-        }, 30000);
-        
-        connection.pingInterval = pingInterval;
-        this.connections.set(combinedStreamName, connection);
-        
-        this.emit('connected', combinedStreamName);
-      });
-      
-      ws.on('message', (data) => {
-        try {
-          const parsedData = JSON.parse(data);
-          
-          // เรียกใช้ callbacks
-          const callbacks = this.streamCallbacks.get(combinedStreamName) || [];
-          callbacks.forEach(callback => {
-            try {
-              callback(parsedData);
-            } catch (callbackError) {
-              logger.error(`Error in combined stream group callback:`, callbackError);
-            }
+        const combinedStreamName = streamNames.join('/');
+        return new Promise((resolve, reject) => {
+          this.connectionQueue.push({
+            type: 'combined',
+            streamName: combinedStreamName,
+            originalStreamNames: streamNames,
+            onMessageCallback,
+            resolver: resolve,
+            rejecter: reject,
           });
-          
-          this.emit('message', combinedStreamName, parsedData);
-        } catch (parseError) {
-          logger.error(`Error parsing message from combined stream group ${groupIndex}:`, parseError);
-        }
-      });
-      
-      // ตั้งค่า handlers สำหรับ error, close, และ pong
-      ws.on('pong', () => {
-        const connection = this.connections.get(combinedStreamName);
-        if (connection) {
-          connection.isAlive = true;
-          this.connections.set(combinedStreamName, connection);
-        }
-      });
-      
-      ws.on('error', (error) => {
-        logger.error(`Combined WebSocket error for group ${groupIndex}:`, error);
-        this.emit('error', combinedStreamName, error);
-      });
-      
-      ws.on('close', async (code, reason) => {
-        logger.warn(`Combined connection closed for group ${groupIndex}: ${code} - ${reason}`);
-        
-        const connection = this.connections.get(combinedStreamName);
-        if (connection && connection.pingInterval) {
-          clearInterval(connection.pingInterval);
-        }
-        
-        this.emit('disconnected', combinedStreamName);
-        
-        if (reconnectAttempts < this.maxReconnectAttempts) {
-          reconnectAttempts++;
-          logger.info(`Attempting to reconnect to combined stream group ${groupIndex} (${reconnectAttempts}/${this.maxReconnectAttempts})`);
-          
-          setTimeout(async () => {
-            try {
-              await this._connectToCombinedStreamsGroup(streamNames, onMessageCallback, groupIndex);
-              logger.info(`Reconnected to combined stream group ${groupIndex}`);
-            } catch (reconnectError) {
-              logger.error(`Failed to reconnect to combined stream group ${groupIndex}:`, reconnectError);
-            }
-          }, this.reconnectInterval);
-        } else {
-          logger.error(`Max reconnect attempts reached for combined stream group ${groupIndex}, giving up`);
-          this.connections.delete(combinedStreamName);
-        }
-      });
-      
-      return new Promise((resolve) => {
-        ws.once('open', () => resolve(true));
-        ws.once('error', () => resolve(false));
-      });
-      
+          if (!this.isProcessingQueue) {
+            this.processConnectionQueue();
+          }
+        });
+      }
     } catch (error) {
-      logger.error(`Error connecting to combined streams group ${groupIndex}:`, error);
+      logger.error(`Error queuing connection for combined streams:`, error);
       return false;
     }
   }
 
   /**
    * เชื่อมต่อกับ WebSocket API ของ Binance
-   * @param {string} requestId - ID ของคำขอ (ใช้สำหรับการติดตาม)
    * @returns {Promise<WebSocket>} - WebSocket connection
    */
   async connectToWebSocketAPI() {
     try {
       const wsApiName = 'binance-ws-api';
-      
-      // ตรวจสอบว่าเชื่อมต่ออยู่แล้วหรือไม่
-      if (this.connections.has(wsApiName)) {
-        const connection = this.connections.get(wsApiName);
-        if (connection.isAlive && connection.ws.readyState === WebSocket.OPEN) {
-          return connection.ws;
-        } else {
-          // ทำความสะอาดการเชื่อมต่อเก่า
-          this.disconnect(wsApiName);
-        }
+      const existingConnection = this.connections.get(wsApiName);
+      if (existingConnection && existingConnection.isAlive && existingConnection.ws && existingConnection.ws.readyState === WebSocket.OPEN) {
+        return existingConnection.ws;
       }
-      
-      // สร้าง WebSocket connection
-      const ws = new WebSocket(this.apiWsUrl);
-      let reconnectAttempts = 0;
-      let pingInterval;
-      
-      // บันทึกการเชื่อมต่อ
-      this.connections.set(wsApiName, {
-        ws,
-        isAlive: false,
-        pingInterval: null,
-        reconnectAttempts: 0
-      });
-      
-      // ตั้งค่า event handlers
-      ws.on('open', () => {
-        logger.info('Connected to Binance WebSocket API');
-        
-        const connection = this.connections.get(wsApiName);
-        connection.isAlive = true;
-        reconnectAttempts = 0;
-        
-        pingInterval = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.ping();
-          }
-        }, 30000);
-        
-        connection.pingInterval = pingInterval;
-        this.connections.set(wsApiName, connection);
-        
-        this.emit('api-connected');
-      });
-      
-      ws.on('message', (data) => {
-        try {
-          const parsedData = JSON.parse(data);
-          this.emit('api-message', parsedData);
-        } catch (parseError) {
-          logger.error('Error parsing message from WebSocket API:', parseError);
-        }
-      });
-      
-      ws.on('pong', () => {
-        const connection = this.connections.get(wsApiName);
-        if (connection) {
-          connection.isAlive = true;
-          this.connections.set(wsApiName, connection);
-        }
-      });
-      
-      ws.on('error', (error) => {
-        logger.error('WebSocket API error:', error);
-        this.emit('api-error', error);
-      });
-      
-      ws.on('close', async (code, reason) => {
-        logger.warn(`WebSocket API connection closed: ${code} - ${reason}`);
-        
-        const connection = this.connections.get(wsApiName);
-        if (connection && connection.pingInterval) {
-          clearInterval(connection.pingInterval);
-        }
-        
-        this.emit('api-disconnected');
-        
-        if (reconnectAttempts < this.maxReconnectAttempts) {
-          reconnectAttempts++;
-          logger.info(`Attempting to reconnect to WebSocket API (${reconnectAttempts}/${this.maxReconnectAttempts})`);
-          
-          setTimeout(async () => {
-            try {
-              await this.connectToWebSocketAPI();
-              logger.info('Reconnected to WebSocket API');
-            } catch (reconnectError) {
-              logger.error('Failed to reconnect to WebSocket API:', reconnectError);
-            }
-          }, this.reconnectInterval);
-        } else {
-          logger.error('Max reconnect attempts reached for WebSocket API, giving up');
-          this.connections.delete(wsApiName);
-        }
-      });
-      
-      // รอให้การเชื่อมต่อเปิด
       return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('WebSocket API connection timeout'));
-        }, 10000); // timeout 10 วินาที
-        
-        ws.once('open', () => {
-          clearTimeout(timeout);
-          resolve(ws);
+        this.connectionQueue.push({
+          type: 'api',
+          streamName: wsApiName,
+          resolver: resolve,
+          rejecter: reject,
         });
-        
-        ws.once('error', (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
+        if (!this.isProcessingQueue) {
+          this.processConnectionQueue();
+        }
       });
-      
     } catch (error) {
-      logger.error('Error connecting to WebSocket API:', error);
+      logger.error('Error queuing connection for WebSocket API:', error);
       throw error;
     }
   }
 
   /**
-   * ส่งคำขอไปยัง WebSocket API
-   * @param {object} request - คำขอที่จะส่ง
-   * @returns {Promise<object>} - ผลลัพธ์จาก API
+   * ประมวลผลคิวการเชื่อมต่อเพื่อรองรับการเชื่อมต่อพร้อมกันหลายเชื่อมต่อ
    */
-  async sendApiRequest(request) {
+  async processConnectionQueue() {
+    if (this.isProcessingQueue || this.connectionQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+    let processedCount = 0;
+
     try {
-      const ws = await this.connectToWebSocketAPI();
+      const batchSize = Math.min(this.connectionQueue.length, this.maxConcurrentConnections);
+      const currentBatch = this.connectionQueue.splice(0, batchSize);
       
-      return new Promise((resolve, reject) => {
-        const requestId = request.id || `req_${Date.now()}`;
-        const timeout = setTimeout(() => {
-          this.removeListener('api-message', messageHandler);
-          reject(new Error('WebSocket API request timeout'));
-        }, 30000);
+      if (currentBatch.length > 0) {
+        logger.info(`Processing ${currentBatch.length} WebSocket connection tasks from queue (max concurrent: ${this.maxConcurrentConnections})`);
         
-        const messageHandler = (data) => {
-          if (data.id === requestId) {
-            clearTimeout(timeout);
-            this.removeListener('api-message', messageHandler);
-            resolve(data);
+        await Promise.allSettled(currentBatch.map(async (task) => {
+          try {
+            const { type, streamName, onMessageCallback, resolver, rejecter, originalStreamNames } = task;
+
+            if (this.connections.has(streamName) && this.connections.get(streamName).isAlive) {
+              logger.debug(`Task for already connected and alive stream: ${streamName}. Resolving.`);
+              if (type === 'api') {
+                resolver(this.connections.get(streamName).ws);
+              } else {
+                resolver(true);
+              }
+              if (onMessageCallback && type !== 'api') {
+                if (!this.streamCallbacks.has(streamName)) {
+                  this.streamCallbacks.set(streamName, []);
+                }
+                if (!this.streamCallbacks.get(streamName).includes(onMessageCallback)) {
+                  this.streamCallbacks.get(streamName).push(onMessageCallback);
+                }
+              }
+              processedCount++;
+              return;
+            }
+            
+            let url;
+            let actualStreamName = streamName;
+
+            if (type === 'single') {
+              url = `${this.baseWsUrl}/${streamName}`;
+            } else if (type === 'combined') {
+              url = `${this.combinedBaseUrl}${originalStreamNames.join('/')}`;
+            } else if (type === 'api') {
+              url = this.apiWsUrl;
+            } else {
+              logger.error(`Unknown task type in connection queue: ${type}`);
+              rejecter(new Error(`Unknown task type: ${type}`));
+              processedCount++;
+              return;
+            }
+
+            const result = await this._createAndManageWebSocket(url, actualStreamName, onMessageCallback);
+            if (type === 'api' && result) {
+              resolver(this.connections.get(actualStreamName).ws);
+            } else if (result) {
+              resolver(true);
+            } else {
+              rejecter(new Error(`Failed to establish connection for ${actualStreamName} via _createAndManageWebSocket`));
+            }
+          } catch (error) {
+            logger.error(`Error processing connection task for ${task.streamName}: ${error.message}`, error.stack);
+            if (task.rejecter) {
+              task.rejecter(error);
+            }
+          } finally {
+            processedCount++;
           }
-        };
-        
-        this.on('api-message', messageHandler);
-        
-        // เพิ่ม requestId ถ้าไม่มี
-        const finalRequest = {
-          ...request,
-          id: requestId
-        };
-        
-        ws.send(JSON.stringify(finalRequest));
-      });
-      
+        }));
+      }
     } catch (error) {
-      logger.error('Error sending WebSocket API request:', error);
-      throw error;
+      logger.error(`Critical error in processConnectionQueue: ${error.message}`, error.stack);
+    } finally {
+      this.isProcessingQueue = false;
+      if (this.connectionQueue.length > 0) {
+        setImmediate(() => this.processConnectionQueue());
+      } else {
+        logger.info(`Connection queue processed. Processed ${processedCount} tasks in this batch.`);
+      }
+    }
+  }
+
+  /**
+   * ตรวจสอบและทดสอบการเชื่อมต่อทั้งหมดเป็นระยะ
+   * ทำการทดสอบสุขภาพของการเชื่อมต่อแต่ละรายการ
+   */
+  async monitorConnections() {
+    try {
+      const unhealthyConnections = [];
+      
+      for (const [streamName, connection] of this.connections.entries()) {
+        if (!connection.isAlive && connection.ws.readyState !== WebSocket.OPEN) {
+          unhealthyConnections.push(streamName);
+        }
+      }
+      
+      if (unhealthyConnections.length > 0) {
+        logger.warn(`Found ${unhealthyConnections.length} unhealthy connections, attempting to reconnect`);
+        
+        for (const streamName of unhealthyConnections) {
+          if (streamName.includes('/') || streamName.startsWith('group')) {
+            const parts = streamName.startsWith('group') ? streamName.substring(streamName.indexOf('_') + 1).split('/') : streamName.split('/');
+            logger.info(`Reconnecting unhealthy combined/group stream: ${streamName} with parts: ${parts.join(', ')}`);
+            this.disconnect(streamName);
+            this.connectToCombinedStreams(parts, this.streamCallbacks.get(streamName)?.[0]).catch(err => {
+              logger.error(`Failed to re-queue combined stream ${streamName} after monitor detection:`, err);
+            });
+          } else if (streamName === 'binance-ws-api') {
+            logger.info(`Reconnecting unhealthy API stream: ${streamName}`);
+            this.disconnect(streamName);
+            this.connectToWebSocketAPI().catch(err => {
+              logger.error(`Failed to re-queue API stream ${streamName} after monitor detection:`, err);
+            });
+          } else {
+            logger.info(`Reconnecting unhealthy single stream: ${streamName}`);
+            this.disconnect(streamName);
+            this.connectToStream(streamName, this.streamCallbacks.get(streamName)?.[0]).catch(err => {
+              logger.error(`Failed to re-queue single stream ${streamName} after monitor detection:`, err);
+            });
+          }
+        }
+      }
+      
+      await this.optimizeConnectionPool();
+      
+      return unhealthyConnections.length;
+    } catch (error) {
+      logger.error('Error monitoring connections:', error);
+      return -1;
     }
   }
 
@@ -629,32 +510,28 @@ class BinanceWebSocketManager extends EventEmitter {
       this.connections.delete(streamName);
       this.streamCallbacks.delete(streamName);
     }
-  }  /**
+  }
+
+  /**
    * ยกเลิกการเชื่อมต่อทั้งหมด
    */
   disconnectAll() {
     logger.info('Disconnecting all WebSocket connections');
     
-    // หยุดระบบตรวจสอบการเชื่อมต่อ
     this.stopConnectionMonitoring();
     
-    // ล้างคิวงานการเชื่อมต่อที่รอดำเนินการ
     if (this.connectionQueue.length > 0) {
       logger.info(`Clearing connection queue with ${this.connectionQueue.length} pending connections`);
       
-      // แจ้งเตือนงานที่รอดำเนินการว่าถูกยกเลิก
       this.connectionQueue.forEach(task => {
         try {
           task.rejecter(new Error('Connection request canceled - disconnecting all connections'));
-        } catch (error) {
-          // ไม่ต้องทำอะไร - แค่ให้แน่ใจว่าจะไม่มี errors ที่ไม่ได้จัดการ
-        }
+        } catch (error) {}
       });
       
       this.connectionQueue = [];
     }
     
-    // ยกเลิกการเชื่อมต่อที่ใช้งานอยู่ทั้งหมด
     for (const [streamName, connection] of this.connections.entries()) {
       if (connection.pingInterval) {
         clearInterval(connection.pingInterval);
@@ -696,205 +573,6 @@ class BinanceWebSocketManager extends EventEmitter {
     
     return status;
   }
-  /**
-   * ประมวลผลคิวการเชื่อมต่อเพื่อรองรับการเชื่อมต่อพร้อมกันหลายเชื่อมต่อ
-   */
-  async processConnectionQueue() {
-    if (this.isProcessingQueue || this.connectionQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessingQueue = true;
-    
-    try {
-      // ดึงงานการเชื่อมต่อตามจำนวนที่กำหนด (ไม่เกิน maxConcurrentConnections)
-      const currentBatch = this.connectionQueue.splice(0, this.maxConcurrentConnections);
-      
-      if (currentBatch.length > 0) {
-        logger.info(`Processing ${currentBatch.length} WebSocket connections in parallel`);
-        
-        // ประมวลผลการเชื่อมต่อพร้อมกัน
-        await Promise.all(currentBatch.map(async (task) => {
-          try {
-            const { streamName, onMessageCallback, resolver, rejecter } = task;
-            
-            // ตรวจสอบว่าเชื่อมต่อกับ stream นี้อยู่แล้วหรือไม่
-            if (this.connections.has(streamName)) {
-              logger.debug(`Already connected to stream: ${streamName}`);
-              
-              // เพิ่ม callback ใหม่สำหรับ stream นี้
-              if (onMessageCallback) {
-                if (!this.streamCallbacks.has(streamName)) {
-                  this.streamCallbacks.set(streamName, []);
-                }
-                this.streamCallbacks.get(streamName).push(onMessageCallback);
-              }
-              
-              resolver(true);
-              return;
-            }
-            
-            // ทำการเชื่อมต่อ
-            const result = await this._performConnection(streamName, onMessageCallback);
-            resolver(result);
-          } catch (error) {
-            // ตรวจสอบว่าเป็นข้อผิดพลาดเกี่ยวกับโควต้าหรือไม่
-            if (error.message && (
-                error.message.includes('quota') || 
-                error.message.includes('limit') || 
-                error.message.includes('too many') ||
-                error.message.includes('rate limit')
-            )) {
-              // จัดการกับข้อผิดพลาดโควต้าเป็นพิเศษ
-              this._handleQuotaExceededError(task.streamName, error);
-              
-              // ใส่งานกลับเข้าไปในคิวเพื่อให้ลองใหม่ภายหลัง
-              this.connectionQueue.push(task);
-            } else {
-              logger.error(`Error in connection task: ${error.message}`);
-              task.rejecter(error);
-            }
-          }
-        }));
-      }
-    } catch (error) {
-      logger.error(`Error processing connection queue: ${error.message}`);
-    } finally {
-      this.isProcessingQueue = false;
-      
-      // ตรวจสอบหากมีงานเหลือในคิว
-      if (this.connectionQueue.length > 0) {
-        // ประมวลผลงานถัดไปในคิวทันที (ถ้าเป็นไปได้)
-        setImmediate(() => this.processConnectionQueue());
-      }
-    }
-  }
-  
-  /**
-   * ทำการเชื่อมต่อ WebSocket (ส่วนการทำงานภายใน)
-   * @param {string} streamName - ชื่อของ stream ที่ต้องการเชื่อมต่อ
-   * @param {function} onMessageCallback - ฟังก์ชันที่จะเรียกเมื่อได้รับข้อมูล
-   * @returns {Promise<boolean>} - สถานะการเชื่อมต่อ
-   * @private
-   */
-  async _performConnection(streamName, onMessageCallback) {
-    try {
-      // สร้าง WebSocket connection
-      const ws = new WebSocket(`${this.baseWsUrl}/${streamName}`);
-      let reconnectAttempts = 0;
-      let pingInterval;
-      
-      // บันทึกการเชื่อมต่อ
-      this.connections.set(streamName, { 
-        ws,
-        isAlive: false,
-        pingInterval: null,
-        reconnectAttempts: 0
-      });
-      
-      // บันทึก callback
-      if (onMessageCallback) {
-        this.streamCallbacks.set(streamName, [onMessageCallback]);
-      } else {
-        this.streamCallbacks.set(streamName, []);
-      }
-      
-      // ตั้งค่า event handlers
-      ws.on('open', () => {
-        logger.info(`Connected to Binance stream: ${streamName}`);
-        
-        const connection = this.connections.get(streamName);
-        connection.isAlive = true;
-        reconnectAttempts = 0;
-        
-        // ตั้งเวลาส่ง ping เป็นประจำเพื่อตรวจสอบการเชื่อมต่อ
-        pingInterval = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.ping();
-          }
-        }, 30000); // ส่ง ping ทุก 30 วินาที
-        
-        connection.pingInterval = pingInterval;
-        this.connections.set(streamName, connection);
-        
-        // ส่งสัญญาณว่าเชื่อมต่อแล้ว
-        this.emit('connected', streamName);
-      });
-      
-      ws.on('message', (data) => {
-        try {
-          const parsedData = JSON.parse(data);
-          
-          // เรียกใช้ callbacks ทั้งหมดสำหรับ stream นี้
-          const callbacks = this.streamCallbacks.get(streamName) || [];
-          callbacks.forEach(callback => {
-            try {
-              callback(parsedData);
-            } catch (callbackError) {
-              logger.error(`Error in stream callback for ${streamName}:`, callbackError);
-            }
-          });
-          
-          // ส่ง event
-          this.emit('message', streamName, parsedData);
-        } catch (parseError) {
-          logger.error(`Error parsing message from ${streamName}:`, parseError);
-        }
-      });
-      
-      ws.on('pong', () => {
-        const connection = this.connections.get(streamName);
-        if (connection) {
-          connection.isAlive = true;
-          this.connections.set(streamName, connection);
-        }
-      });
-      
-      ws.on('error', (error) => {
-        logger.error(`WebSocket error for ${streamName}:`, error);
-        this.emit('error', streamName, error);
-      });
-      
-      ws.on('close', async (code, reason) => {
-        logger.warn(`Connection closed for ${streamName}: ${code} - ${reason}`);
-        
-        const connection = this.connections.get(streamName);
-        if (connection && connection.pingInterval) {
-          clearInterval(connection.pingInterval);
-        }
-        
-        // แจ้งเตือนว่าการเชื่อมต่อถูกปิด
-        this.emit('disconnected', streamName);
-        
-        // เชื่อมต่อใหม่ถ้าจำเป็น
-        if (reconnectAttempts < this.maxReconnectAttempts) {
-          reconnectAttempts++;
-          logger.info(`Attempting to reconnect to ${streamName} (${reconnectAttempts}/${this.maxReconnectAttempts})`);
-          
-          setTimeout(async () => {
-            try {
-              await this.connectToStream(streamName);
-              logger.info(`Reconnected to ${streamName}`);
-            } catch (reconnectError) {
-              logger.error(`Failed to reconnect to ${streamName}:`, reconnectError);
-            }
-          }, this.reconnectInterval);
-        } else {
-          logger.error(`Max reconnect attempts reached for ${streamName}, giving up`);
-          this.connections.delete(streamName);
-        }
-      });
-      
-      return new Promise((resolve) => {
-        ws.once('open', () => resolve(true));
-        ws.once('error', () => resolve(false));
-      });
-      
-    } catch (error) {
-      logger.error(`Error connecting to stream ${streamName}:`, error);
-      return false;
-    }
-  }
 
   /**
    * ปรับขนาดสระการเชื่อมต่อตามการใช้งาน
@@ -902,24 +580,18 @@ class BinanceWebSocketManager extends EventEmitter {
    */
   async optimizeConnectionPool() {
     try {
-      // วิเคราะห์จำนวนการเชื่อมต่อปัจจุบัน
       const currentConnections = this.connections.size;
       const maxConnections = config.websocket.maxConnections;
       const queueSize = this.connectionQueue.length;
       
-      // ถ้ามีการเชื่อมต่อน้อยและมีคิวงานมาก อาจเพิ่มค่าพารามิเตอร์ maxConcurrentConnections
       if (currentConnections < maxConnections * 0.5 && queueSize > 10) {
-        // เพิ่มขนาด pool เพื่อรองรับงานที่เข้ามา
         const newMaxConcurrent = Math.min(maxConnections, this.maxConcurrentConnections * 1.5);
         
         if (newMaxConcurrent > this.maxConcurrentConnections) {
           logger.info(`Scaling up connection pool: ${this.maxConcurrentConnections} -> ${newMaxConcurrent}`);
           this.maxConcurrentConnections = Math.floor(newMaxConcurrent);
         }
-      }
-      // ถ้าการใช้งาน connection pool น้อย อาจลดขนาดลงเพื่อประหยัดทรัพยากร
-      else if (currentConnections < maxConnections * 0.2 && queueSize === 0 && this.maxConcurrentConnections > 20) {
-        // ลดขนาด pool ลงช้าๆ
+      } else if (currentConnections < maxConnections * 0.2 && queueSize === 0 && this.maxConcurrentConnections > 20) {
         const newMaxConcurrent = Math.max(20, this.maxConcurrentConnections * 0.8);
         
         if (newMaxConcurrent < this.maxConcurrentConnections) {
@@ -937,92 +609,6 @@ class BinanceWebSocketManager extends EventEmitter {
       logger.error('Error optimizing connection pool:', error);
       return null;
     }
-  }
-  
-  /**
-   * ตรวจสอบและทดสอบการเชื่อมต่อทั้งหมดเป็นระยะ
-   * ทำการทดสอบสุขภาพของการเชื่อมต่อแต่ละรายการ
-   */
-  async monitorConnections() {
-    try {
-      const unhealthyConnections = [];
-      
-      for (const [streamName, connection] of this.connections.entries()) {
-        if (!connection.isAlive && connection.ws.readyState !== WebSocket.OPEN) {
-          unhealthyConnections.push(streamName);
-        }
-      }
-      
-      // ถ้ามีการเชื่อมต่อที่มีปัญหา ให้ลองเชื่อมต่อใหม่
-      if (unhealthyConnections.length > 0) {
-        logger.warn(`Found ${unhealthyConnections.length} unhealthy connections, attempting to reconnect`);
-        
-        // ลองเชื่อมต่อใหม่ทีละการเชื่อมต่อ (ไม่พร้อมกันทั้งหมดเพื่อไม่ให้เกิดการใช้ทรัพยากรมากเกินไป)
-        for (const streamName of unhealthyConnections) {
-          // ตรวจสอบประเภทของ stream และทำการเชื่อมต่อใหม่ตามประเภท
-          if (streamName.includes('/')) {
-            // เป็น combined stream ให้ลองใช้วิธีเชื่อมต่อใหม่ตามที่เหมาะสม
-            const streamParts = streamName.split('/');
-            
-            // ถ้าเป็นกลุ่มให้ตัดส่วน 'groupX_' ออกก่อน (ถ้ามี)
-            const normalizedParts = streamParts.map(part => {
-              if (part.startsWith('group') && part.includes('_')) {
-                return part.split('_')[1];
-              }
-              return part;
-            });
-            
-            // เชื่อมต่อใหม่
-            this.disconnect(streamName);
-            await this.connectToCombinedStreams(normalizedParts);
-          } else {
-            // เป็น stream เดี่ยว
-            this.disconnect(streamName);
-            await this.connectToStream(streamName);
-          }
-        }
-      }
-      
-      // วิเคราะห์และปรับขนาดสระการเชื่อมต่อ
-      await this.optimizeConnectionPool();
-      
-      return unhealthyConnections.length;
-    } catch (error) {
-      logger.error('Error monitoring connections:', error);
-      return -1;
-    }
-  }
-
-  /**
-   * จัดการกับข้อผิดพลาดเกี่ยวกับโควต้าที่เกินขีดจำกัด
-   * @param {string} streamName - ชื่อของ stream ที่มีปัญหา
-   * @param {Error} error - ข้อความแสดงข้อผิดพลาด
-   * @private
-   */
-  _handleQuotaExceededError(streamName, error) {
-    logger.warn(`Quota exceeded for ${streamName}, implementing backoff strategy`);
-    
-    // ลดขนาดสระการเชื่อมต่อลงชั่วคราวเพื่อจัดการกับข้อจำกัดโควต้า
-    this.maxConcurrentConnections = Math.max(5, Math.floor(this.maxConcurrentConnections * 0.5));
-    
-    // รอเวลานานขึ้นก่อนลองอีกครั้ง
-    const backoffTime = Math.floor(Math.random() * 30000) + 30000; // 30-60 วินาที
-    
-    logger.info(`Adjusted connection pool size to ${this.maxConcurrentConnections}, backing off for ${backoffTime/1000}s`);
-    
-    // หยุดประมวลผลคิวชั่วคราว
-    this.isProcessingQueue = false;
-    
-    // ลองประมวลผลคิวอีกครั้งหลังจากรอ
-    setTimeout(() => {
-      logger.info('Resuming connection queue processing after backoff');
-      
-      // คืนค่าขนาดสระการเชื่อมต่อให้เป็นค่าเริ่มต้น
-      this.maxConcurrentConnections = config.websocket.maxConnections || 50;
-      
-      // ลองประมวลผลคิวอีกครั้ง
-      this.processConnectionQueue();
-    }, backoffTime);
   }
 }
 
