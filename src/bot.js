@@ -1,6 +1,7 @@
 /**
  * โมดูลหลักสำหรับการตั้งค่า Telegram bot
  * ไฟล์นี้กำหนดการจัดการคำสั่ง Telegram bot และคำสั่งต่างๆ
+ * Refactored to use modular approach with SOLID principles
  */
 
 const config = require('./config');
@@ -9,6 +10,7 @@ const PriceController = require('./controllers/priceController');
 const AlertController = require('./controllers/alertController');
 const PortfolioController = require('./controllers/portfolioController');
 const NewsController = require('./controllers/newsController');
+const BotCommandRegistry = require('./utils/botCommandRegistry');
 const logger = require('./utils/logger').createModuleLogger('Bot');
 
 /**
@@ -16,8 +18,11 @@ const logger = require('./utils/logger').createModuleLogger('Bot');
  * @param {object} bot - อินสแตนซ์ Telegraf bot
  */
 module.exports = (bot) => {
-  // Middleware เพื่อบันทึกข้อมูลการใช้งาน
-  bot.use(async (ctx, next) => {
+  // Create a command registry
+  const registry = new BotCommandRegistry();
+  
+  // Add logging middleware
+  registry.addMiddleware(async (ctx, next) => {
     const startTime = new Date();
     
     // บันทึกข้อมูลการใช้งาน
@@ -37,66 +42,53 @@ module.exports = (bot) => {
     logger.debug(`Response time: ${responseTime}ms`);
   });
   
-  // ตั้งค่า error handling
-  bot.catch((err, ctx) => {
+  // Add error handler
+  registry.addErrorHandler((err, ctx) => {
     logger.error(`Error for ${ctx.updateType}`, err);
     ctx.reply('เกิดข้อผิดพลาด โปรดลองอีกครั้งในภายหลัง');
   });
   
-  // =========== คำสั่งพื้นฐาน ===========
+  // Add command groups - basic commands
+  registry.addCommandGroup('Basic Commands', [
+    { command: 'start', handler: UserController.handleStart },
+    { command: 'help', handler: UserController.handleHelp },
+    { command: 'settings', handler: UserController.handleSettings },
+    { command: 'premium', handler: UserController.handlePremium },
+    { command: 'currency', handler: UserController.handleSetCurrency },
+    { command: 'currencies', handler: UserController.handleListCurrencies },
+  ]);
   
-  // คำสั่ง /start - เริ่มต้นใช้งาน bot
-  bot.start(UserController.handleStart);
+  // Add command groups - price commands
+  registry.addCommandGroup('Price Commands', [
+    { command: 'price', handler: PriceController.handlePriceCommand },
+  ]);
   
-  // คำสั่ง /help - แสดงความช่วยเหลือ
-  bot.help(UserController.handleHelp);
+  // Add command groups - alert commands
+  registry.addCommandGroup('Alert Commands', [
+    { command: 'alert', handler: AlertController.handleSetAlert },
+    { command: 'alerts', handler: AlertController.handleListAlerts },
+    { command: 'remove', handler: AlertController.handleRemoveAlert },
+  ]);
   
-  // คำสั่ง /settings - ตั้งค่าผู้ใช้
-  bot.command('settings', UserController.handleSettings);
+  // Add command groups - portfolio commands
+  registry.addCommandGroup('Portfolio Commands', [
+    { command: 'portfolio', handler: PortfolioController.handleShowPortfolio },
+    { command: 'add', handler: PortfolioController.handleAddToPortfolio },
+  ]);
   
-  // คำสั่ง /premium - อัพเกรดเป็นผู้ใช้พรีเมียม
-  bot.command('premium', UserController.handlePremium);
+  // Add command groups - news commands
+  registry.addCommandGroup('News Commands', [
+    { command: 'news', handler: NewsController.handleGetNews },
+  ]);
   
-  // คำสั่ง /currency <code> - ตั้งค่าสกุลเงินเริ่มต้น
-  bot.command('currency', UserController.handleSetCurrency);
-  
-  // คำสั่ง /currencies - แสดงรายการสกุลเงินที่รองรับ
-  bot.command('currencies', UserController.handleListCurrencies);
-  
-  // =========== คำสั่งตรวจสอบราคา ===========
-  
-  // คำสั่ง /price <symbol> - ดูราคาปัจจุบัน
-  bot.command('price', PriceController.handlePriceCommand);
-  
-  // =========== คำสั่งจัดการการแจ้งเตือน ===========
-  
-  // คำสั่ง /alert <symbol> <condition> <value> - ตั้งค่าการแจ้งเตือนราคา
-  bot.command('alert', AlertController.handleSetAlert);
-  
-  // คำสั่ง /alerts - แสดงรายการแจ้งเตือนที่เปิดใช้งาน
-  bot.command('alerts', AlertController.handleListAlerts);
-  
-  // คำสั่ง /remove <alert_id> - ลบการแจ้งเตือน
-  bot.command('remove', AlertController.handleRemoveAlert);
-  
-  // =========== คำสั่งพอร์ตโฟลิโอ ===========
-  
-  // คำสั่ง /portfolio - แสดงพอร์ตโฟลิโอ
-  bot.command('portfolio', PortfolioController.handleShowPortfolio);
-  
-  // คำสั่ง /add <symbol> <quantity> <buy_price> - เพิ่มเหรียญในพอร์ตโฟลิโอ
-  bot.command('add', PortfolioController.handleAddToPortfolio);
-  
-  // =========== คำสั่งข่าวและการวิเคราะห์ ===========
-  
-  // คำสั่ง /news <symbol> - แสดงข่าวล่าสุด
-  bot.command('news', NewsController.handleGetNews);
-  
-  // รับมือกับข้อความที่ไม่มีการรองรับ
-  bot.on('text', (ctx) => {
+  // Add handler for unknown text messages
+  registry.addMessageHandler((ctx) => {
     ctx.reply('คำสั่งไม่ถูกต้อง พิมพ์ /help เพื่อดูคำสั่งที่รองรับ');
   });
   
-  // เริ่มต้นการทำงานของบอท
+  // Register everything with the bot
+  registry.registerWith(bot);
+  
+  // Log bot initialization
   logger.info('Bot commands and middleware registered');
 };
