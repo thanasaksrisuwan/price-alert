@@ -53,8 +53,32 @@ function validateRequiredEnv() {
             'QUEUE_CONCURRENCY'
         ];
         
+        // ตัวแปร WebSocket ที่จำเป็น
+        const requiredWebSocketVars = [
+            'MAX_WEBSOCKET_CONNECTIONS',
+            'WEBSOCKET_CONNECTION_POOL_SIZE',
+            'WEBSOCKET_RECONNECT_INTERVAL',
+            'WEBSOCKET_RECONNECT_ATTEMPTS'
+        ];
+        
+        // ตรวจสอบตัวแปรหลัก (เข้มงวด)
         for (const varName of requiredVars) {
             getEnvVar(varName, null, true);
+        }
+        
+        // ตรวจสอบตัวแปร WebSocket (ไม่เข้มงวด)
+        let allWebSocketVarsPresent = true;
+        for (const varName of requiredWebSocketVars) {
+            try {
+                getEnvVar(varName, null, false);
+            } catch (error) {
+                logger.warn(`ตัวแปร WebSocket "${varName}" ไม่ถูกกำหนด จะใช้ค่าเริ่มต้น`);
+                allWebSocketVarsPresent = false;
+            }
+        }
+        
+        if (!allWebSocketVarsPresent) {
+            logger.info('บางตัวแปร WebSocket ไม่ถูกกำหนด แต่จะใช้ค่าเริ่มต้นแทน');
         }
         
         return true;

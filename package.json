@@ -6,13 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest",
-    "setup": "node cli.js setup",
-    "services": "node cli.js services",
-    "services:start": "node cli.js services:start",
-    "services:stop": "node cli.js services:stop",
-    "cli": "node cli.js",
-    "quickstart": "cmd /c quick-start.cmd"
+    "test": "jest"
   },
   "bin": {
     "price-alert": "./cli.js"

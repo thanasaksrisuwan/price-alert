@@ -15,9 +15,47 @@ const binanceInitializer = require('./src/services/binanceInitializer');
 // สร้าง Express app
 const app = express();
 
+// Track application start time for health check
+const appStartTime = Date.now();
+
 // ตั้งค่า middleware พื้นฐาน
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Simple health check endpoint that doesn't require any service connections
+app.get('/simple-health', (req, res) => {
+  console.log('Simple health check called');
+  res.status(200).send('OK');
+});
+
+// Add health check endpoint for Docker
+app.get('/health', (req, res) => {
+  // During initial startup, return OK even if services aren't connected yet
+  const appStartupTime = 60000; // 60 seconds
+  const isStartupPeriod = Date.now() - appStartTime < appStartupTime;
+  
+  // Check if essential services are connected
+  const redisConnected = redis.isConnected();
+  const dbConnected = database.isConnected();
+  const healthy = redisConnected && dbConnected;
+  
+  if (healthy || isStartupPeriod) {
+    logger.debug('Health check passed');
+    res.status(200).json({ 
+      status: 'healthy',
+      startupPeriod: isStartupPeriod,
+      redis: redisConnected,
+      database: dbConnected
+    });
+  } else {
+    logger.warn(`Health check failed: Redis=${redisConnected}, DB=${dbConnected}`);
+    res.status(503).json({ 
+      status: 'unhealthy',
+      redis: redisConnected,
+      database: dbConnected
+    });
+  }
+});
 
 // สร้าง instance ของ Telegram bot
 const bot = new Telegraf(config.telegram.token);
@@ -28,6 +66,26 @@ const bot = new Telegraf(config.telegram.token);
  */
 async function startApp() {
   try {
+    // Start Express server before other services to ensure health check is available
+    try {
+      logger.info(`Attempting to start server on port ${config.app.port}...`);
+      console.log(`Attempting to start server on port ${config.app.port}...`); // Direct to Docker logs
+      
+      const server = app.listen(config.app.port, '0.0.0.0', () => {
+        logger.info(`Server is running on port ${config.app.port}`);
+        console.log(`Server is running on port ${config.app.port}`); // Direct to Docker logs
+      });
+      
+      server.on('error', (err) => {
+        logger.error(`Server error: ${err.message}`, err);
+        console.error(`Server error: ${err.message}`); // Direct to Docker logs
+      });
+    } catch (err) {
+      logger.error(`Exception when starting server: ${err.message}`, err);
+      console.error(`Exception when starting server: ${err.message}`); // Direct to Docker logs
+      // Continue with other services even if the server fails
+    }
+    
     // เชื่อมต่อกับ Redis
     await redis.connect();
     
@@ -59,10 +117,10 @@ async function startApp() {
     await bot.launch();
     logger.info('Telegram bot started successfully');
     
-    // เริ่ม Express server
-    const server = app.listen(config.app.port, () => {
-      logger.info(`Server is running on port ${config.app.port}`);
-    });
+    // No need to start Express server here since we already started it at the beginning
+    // just wrap up the startup process
+    logger.info('Application startup completed successfully');
+    console.log('Application startup completed successfully'); // Direct to Docker logs
       // จัดการการปิดการทำงานอย่างสง่างาม
     const shutdown = async () => {
       logger.info('Shutting down gracefully...');

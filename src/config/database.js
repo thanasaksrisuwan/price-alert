@@ -13,9 +13,13 @@ const pool = new Pool({
   connectionString: config.database.url,
 });
 
+// Track connection status
+let isDbConnected = false;
+
 // จัดการเหตุการณ์ข้อผิดพลาดของพูล
 pool.on('error', (err) => {
   dbLogger.error('PostgreSQL pool error:', err);
+  isDbConnected = false;
 });
 
 /**
@@ -27,9 +31,11 @@ async function testConnection() {
   try {
     client = await pool.connect();
     dbLogger.info('PostgreSQL connection established successfully');
+    isDbConnected = true;
     return true;
   } catch (error) {
     dbLogger.error('PostgreSQL connection error:', error);
+    isDbConnected = false;
     return false;
   } finally {
     if (client) {
@@ -58,8 +64,17 @@ async function query(text, params) {
   }
 }
 
+/**
+ * ตรวจสอบสถานะการเชื่อมต่อกับฐานข้อมูล
+ * @returns {boolean} สถานะการเชื่อมต่อ
+ */
+function isConnected() {
+  return isDbConnected;
+}
+
 module.exports = {
   query,
   pool,
   testConnection,
+  isConnected,
 };
